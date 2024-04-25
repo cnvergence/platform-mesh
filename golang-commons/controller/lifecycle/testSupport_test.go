@@ -14,8 +14,23 @@ import (
 	"github.com/openmfp/golang-commons/errors"
 )
 
+const failureScenarioSubroutineFinalizer = "failuresubroutine"
+const changeStatusSubroutineFinalizer = "changestatus"
+
+type implementConditions struct {
+	testSupport.TestApiObject `json:",inline"`
+}
+
+func (m *implementConditions) GetConditions() []metav1.Condition {
+	return m.Status.Conditions
+}
+
+func (m *implementConditions) SetConditions(conditions []metav1.Condition) {
+	m.Status.Conditions = conditions
+}
+
 type implementingSpreadReconciles struct {
-	testSupport.TestApiObject
+	testSupport.TestApiObject `json:",inline"`
 }
 
 func (m *implementingSpreadReconciles) GetGeneration() int64 {
@@ -72,12 +87,15 @@ type changeStatusSubroutine struct {
 }
 
 func (c changeStatusSubroutine) Process(_ context.Context, runtimeObj RuntimeObject) (controllerruntime.Result, errors.OperatorError) {
-	instance, ok := runtimeObj.(*testSupport.TestApiObject)
-	if ok {
+	if instance, ok := runtimeObj.(*testSupport.TestApiObject); ok {
 		instance.Status.Some = "other string"
-	} else {
-		i, _ := runtimeObj.(*implementingSpreadReconciles)
-		i.Status.Some = "other string"
+	}
+	if instance, ok := runtimeObj.(*implementingSpreadReconciles); ok {
+		instance.Status.Some = "other string"
+	}
+
+	if instance, ok := runtimeObj.(*implementConditions); ok {
+		instance.Status.Some = "other string"
 	}
 	return controllerruntime.Result{}, nil
 }
@@ -91,12 +109,14 @@ func (c changeStatusSubroutine) GetName() string {
 }
 
 func (c changeStatusSubroutine) Finalizers() []string {
-	return []string{"finalizer"}
+	return []string{"changestatus"}
 }
 
 type failureScenarioSubroutine struct {
-	Retry      bool
-	RequeAfter bool
+	Retry              bool
+	RequeAfter         bool
+	FinalizeRetry      bool
+	FinalizeRequeAfter bool
 }
 
 func (f failureScenarioSubroutine) Process(_ context.Context, _ RuntimeObject) (controllerruntime.Result, errors.OperatorError) {
@@ -112,11 +132,19 @@ func (f failureScenarioSubroutine) Process(_ context.Context, _ RuntimeObject) (
 }
 
 func (f failureScenarioSubroutine) Finalize(_ context.Context, _ RuntimeObject) (controllerruntime.Result, errors.OperatorError) {
-	return controllerruntime.Result{}, nil
+	if f.Retry {
+		return controllerruntime.Result{Requeue: true}, nil
+	}
+
+	if f.RequeAfter {
+		return controllerruntime.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	return controllerruntime.Result{}, errors.NewOperatorError(fmt.Errorf("failureScenarioSubroutine"), true, false)
 }
 
 func (f failureScenarioSubroutine) Finalizers() []string {
-	return []string{}
+	return []string{failureScenarioSubroutineFinalizer}
 }
 
 func (c failureScenarioSubroutine) GetName() string {

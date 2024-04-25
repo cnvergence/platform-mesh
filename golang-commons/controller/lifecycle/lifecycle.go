@@ -3,14 +3,15 @@ package lifecycle
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"slices"
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/exp/maps"
-	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/equality"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,6 +33,7 @@ type LifecycleManager struct {
 	operatorName     string
 	controllerName   string
 	spreadReconciles bool
+	manageConditions bool
 }
 
 type RuntimeObject interface {
@@ -66,45 +68,72 @@ func (l *LifecycleManager) Reconcile(ctx context.Context, req ctrl.Request, inst
 	result := ctrl.Result{}
 	reconcileId := uuid.New().String()
 
-	log, err := l.log.ChildLoggerWithAttributes("name", req.Name, "namespace", req.Namespace, "reconcile_id", reconcileId)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
+	log := l.log.MustChildLoggerWithAttributes("name", req.Name, "namespace", req.Namespace, "reconcile_id", reconcileId)
 	sentryTags := sentry.Tags{"namespace": req.Namespace, "name": req.Name}
 
 	ctx = logger.SetLoggerInContext(ctx, log)
 	ctx = sentry.ContextWithSentryTags(ctx, sentryTags)
 
 	log.Info().Msg("start reconcile")
-	err = l.client.Get(ctx, req.NamespacedName, instance)
+	err := l.client.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
-		if k8sErrors.IsNotFound(err) {
+		if kerrors.IsNotFound(err) {
 			log.Info().Msg("instance not found. It was likely deleted")
 			return ctrl.Result{}, nil
 		}
 		return l.handleClientError("failed to retrieve instance", log, err, sentryTags)
 	}
 
-	c := instance.DeepCopyObject()
-
-	if l.spreadReconciles && instance.GetDeletionTimestamp().IsZero() {
-		if instanceStatusObj, ok := instance.(RuntimeObjectSpreadReconcileStatus); ok {
-			if !slices.Contains(maps.Keys(instance.GetLabels()), SpreadReconcileRefreshLabel) &&
-				(instance.GetGeneration() == instanceStatusObj.GetObservedGeneration() || v1.Now().UTC().Before(instanceStatusObj.GetNextReconcileTime().Time.UTC())) {
-				return onNextReconcile(instanceStatusObj, log)
-			}
-		} else {
-			err = fmt.Errorf("spreadReconciles is enabled, but instance does not implement RuntimeObjectSpreadReconcileStatus interface. This is a programming error")
-			log.Error().Err(err).Msg("Error during reconcile")
-			sentry.CaptureError(err, sentryTags)
+	originalCopy := instance.DeepCopyObject()
+	inDeletion := instance.GetDeletionTimestamp() != nil
+	var conditions []v1.Condition
+	if l.manageConditions {
+		instanceConditionsObj, err := toRuntimeObjectConditionsInterface(instance, log)
+		if err != nil {
 			return ctrl.Result{}, err
 		}
+		conditions = instanceConditionsObj.GetConditions()
 	}
+
+	if l.spreadReconciles && instance.GetDeletionTimestamp().IsZero() {
+		instanceStatusObj, err := toRuntimeObjectSpreadReconcileStatusInterface(instance, log)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !slices.Contains(maps.Keys(instance.GetLabels()), SpreadReconcileRefreshLabel) &&
+			(instance.GetGeneration() == instanceStatusObj.GetObservedGeneration() || v1.Now().UTC().Before(instanceStatusObj.GetNextReconcileTime().Time.UTC())) {
+			return onNextReconcile(instanceStatusObj, log)
+		}
+	}
+
+	if l.manageConditions {
+		setInstanceConditionUnknownIfNotSet(&conditions)
+	}
+
+	// In case of deletion execute the finalize subroutines in the reverse order as subroutine processing
+	subroutines := make([]Subroutine, len(l.subroutines))
+	copy(subroutines, l.subroutines)
+	if inDeletion {
+		slices.Reverse(subroutines)
+	}
+
 	// Continue with reconciliation
-	for _, subroutine := range l.subroutines {
+	for _, subroutine := range subroutines {
+		if l.manageConditions {
+			setSubroutineConditionToUnknownIfNotSet(&conditions, subroutine, inDeletion, log)
+		}
 		subResult, err := l.reconcileSubroutine(ctx, instance, subroutine, log, sentryTags)
 		if err != nil {
+			if l.manageConditions {
+				setSubroutineCondition(&conditions, subroutine, result, err, inDeletion, log)
+				setInstanceConditionReady(&conditions, v1.ConditionFalse)
+				instanceConditionsObj, err := toRuntimeObjectConditionsInterface(instance, log)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				instanceConditionsObj.SetConditions(conditions)
+			}
+			_ = updateStatus(ctx, l.client, originalCopy, instance, log, sentryTags)
 			return subResult, err
 		}
 		if subResult.Requeue {
@@ -115,33 +144,44 @@ func (l *LifecycleManager) Reconcile(ctx context.Context, req ctrl.Request, inst
 				result.RequeueAfter = subResult.RequeueAfter
 			}
 		}
+		if l.manageConditions {
+			if !subResult.Requeue && subResult.RequeueAfter == 0 {
+				setSubroutineCondition(&conditions, subroutine, subResult, err, inDeletion, log)
+			}
+		}
 	}
 
 	if !result.Requeue && result.RequeueAfter == 0 {
 		// Reconciliation was successful
 		if l.spreadReconciles && instance.GetDeletionTimestamp().IsZero() {
-			if instanceStatusObj, ok := instance.(RuntimeObjectSpreadReconcileStatus); ok {
-				setNextReconcileTime(instanceStatusObj, log)
-				updateObservedGeneration(instanceStatusObj, log)
+			instanceStatusObj, err := toRuntimeObjectSpreadReconcileStatusInterface(instance, log)
+			if err != nil {
+				return ctrl.Result{}, err
 			}
+			setNextReconcileTime(instanceStatusObj, log)
+			updateObservedGeneration(instanceStatusObj, log)
+		}
+
+		if l.manageConditions {
+			setInstanceConditionReady(&conditions, v1.ConditionTrue)
+		}
+	} else {
+		if l.manageConditions {
+			setInstanceConditionReady(&conditions, v1.ConditionFalse)
 		}
 	}
 
-	currentStatus := reflect.Indirect(reflect.ValueOf(instance)).FieldByName("Status").Interface()
-	originalStatus := reflect.Indirect(reflect.ValueOf(c)).FieldByName("Status").Interface()
-	equal := reflect.DeepEqual(currentStatus, originalStatus)
-	if !equal {
-		log.Info().Msg("updating resource status")
-		err = l.client.Status().Update(ctx, instance)
+	if l.manageConditions {
+		instanceConditionsObj, err := toRuntimeObjectConditionsInterface(instance, log)
 		if err != nil {
-			if !k8sErrors.IsConflict(err) {
-				sentry.CaptureError(err, sentryTags, sentry.Extras{"message": "Updating of instance status failed"})
-			}
-			log.Error().Err(err).Msg("cannot update reconciliation Conditions, kubernetes client error")
-			return result, err
+			return ctrl.Result{}, err
 		}
-	} else {
-		log.Info().Msg("skipping status update, since they are equal")
+		instanceConditionsObj.SetConditions(conditions)
+	}
+
+	err = updateStatus(ctx, l.client, originalCopy, instance, log, sentryTags)
+	if err != nil {
+		return result, err
 	}
 
 	if l.spreadReconciles && instance.GetDeletionTimestamp().IsZero() {
@@ -156,6 +196,53 @@ func (l *LifecycleManager) Reconcile(ctx context.Context, req ctrl.Request, inst
 
 	log.Info().Msg("end reconcile")
 	return result, nil
+}
+
+func updateStatus(ctx context.Context, cl client.Client, original runtime.Object, current RuntimeObject, log *logger.Logger, sentryTags sentry.Tags) error {
+
+	currentUn, err := runtime.DefaultUnstructuredConverter.ToUnstructured(current)
+	if err != nil {
+		return err
+	}
+
+	originalUn, err := runtime.DefaultUnstructuredConverter.ToUnstructured(original)
+	if err != nil {
+		return err
+	}
+
+	currentStatus, hasField, err := unstructured.NestedFieldCopy(currentUn, "status")
+	if err != nil {
+		return err
+	}
+	if !hasField {
+		return fmt.Errorf("status field not found in current object")
+	}
+
+	originalStatus, hasField, err := unstructured.NestedFieldCopy(originalUn, "status")
+	if err != nil {
+		return err
+	}
+	if !hasField {
+		return fmt.Errorf("status field not found in current object")
+	}
+
+	if equality.Semantic.DeepEqual(currentStatus, originalStatus) {
+		log.Info().Msg("skipping status update, since they are equal")
+		return nil
+	}
+
+	log.Info().Msg("updating resource status")
+	err = cl.Status().Update(ctx, current)
+	if err != nil {
+		if !kerrors.IsConflict(err) {
+			log.Error().Err(err).Msg("cannot update status, kubernetes client error")
+			sentry.CaptureError(err, sentryTags, sentry.Extras{"message": "Updating of instance status failed"})
+		}
+		log.Error().Err(err).Msg("cannot update reconciliation Conditions, kubernetes client error")
+		return err
+	}
+
+	return nil
 }
 
 func (l *LifecycleManager) handleClientError(msg string, log *logger.Logger, err error, sentryTags sentry.Tags) (ctrl.Result, error) {
@@ -185,8 +272,10 @@ func (l *LifecycleManager) reconcileSubroutine(ctx context.Context, instance Run
 	if instance.GetDeletionTimestamp() != nil {
 		if containsFinalizer(instance, subroutine.Finalizers()) {
 			result, err = subroutine.Finalize(ctx, instance)
-			// Remove finalizers unless requeue is requested
-			err = l.removeFinalizerIfNeeded(ctx, instance, subroutine, err, result)
+			if err == nil {
+				// Remove finalizers unless requeue is requested
+				err = l.removeFinalizerIfNeeded(ctx, instance, subroutine, result)
+			}
 		}
 	} else {
 		err = l.addFinalizerIfNeeded(ctx, instance, subroutine)
@@ -195,6 +284,7 @@ func (l *LifecycleManager) reconcileSubroutine(ctx context.Context, instance Run
 		}
 	}
 	if err != nil && err.Sentry() {
+		log.Error().Err(err.Err()).Msg("subroutine ended with error")
 		sentry.CaptureError(err.Err(), sentryTags)
 	}
 	if err != nil && err.Retry() {
@@ -205,8 +295,8 @@ func (l *LifecycleManager) reconcileSubroutine(ctx context.Context, instance Run
 	return result, nil
 }
 
-func (l *LifecycleManager) removeFinalizerIfNeeded(ctx context.Context, instance RuntimeObject, subroutine Subroutine, err errors.OperatorError, result ctrl.Result) errors.OperatorError {
-	if err == nil && !result.Requeue && result.RequeueAfter == 0 {
+func (l *LifecycleManager) removeFinalizerIfNeeded(ctx context.Context, instance RuntimeObject, subroutine Subroutine, result ctrl.Result) errors.OperatorError {
+	if !result.Requeue && result.RequeueAfter == 0 {
 		update := false
 		for _, f := range subroutine.Finalizers() {
 			needsUpdate := controllerutil.RemoveFinalizer(instance, f)
@@ -215,13 +305,14 @@ func (l *LifecycleManager) removeFinalizerIfNeeded(ctx context.Context, instance
 			}
 		}
 		if update {
-			updateErr := l.client.Update(ctx, instance)
-			if updateErr != nil {
-				return errors.NewOperatorError(errors.Wrap(updateErr, "failed to update instance"), true, false)
+			err := l.client.Update(ctx, instance)
+			if err != nil {
+				return errors.NewOperatorError(errors.Wrap(err, "failed to update instance"), true, false)
 			}
 		}
 	}
-	return err
+
+	return nil
 }
 
 func (l *LifecycleManager) addFinalizerIfNeeded(ctx context.Context, instance RuntimeObject, subroutine Subroutine) errors.OperatorError {
@@ -241,7 +332,21 @@ func (l *LifecycleManager) addFinalizerIfNeeded(ctx context.Context, instance Ru
 	return nil
 }
 
-func (l *LifecycleManager) SetupWithManager(mgr ctrl.Manager, maxReconciles int, reconcilerName string, instance RuntimeObject, debugLabelValue string, r reconcile.Reconciler, eventPredicates ...predicate.Predicate) error {
+func (l *LifecycleManager) SetupWithManager(mgr ctrl.Manager, maxReconciles int, reconcilerName string, instance RuntimeObject, debugLabelValue string, r reconcile.Reconciler, log *logger.Logger, eventPredicates ...predicate.Predicate) error {
+	if l.manageConditions {
+		_, err := toRuntimeObjectConditionsInterface(instance, log)
+		if err != nil {
+			return err
+		}
+	}
+
+	if l.spreadReconciles {
+		_, err := toRuntimeObjectSpreadReconcileStatusInterface(instance, log)
+		if err != nil {
+			return err
+		}
+	}
+
 	eventPredicates = append([]predicate.Predicate{filter.DebugResourcesBehaviourPredicate(debugLabelValue)}, eventPredicates...)
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(reconcilerName).

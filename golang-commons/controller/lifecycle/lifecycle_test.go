@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
@@ -14,7 +16,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	"github.com/openmfp/golang-commons/controller/lifecycle/mocks"
 	"github.com/openmfp/golang-commons/controller/testSupport"
+	"github.com/openmfp/golang-commons/logger"
 	"github.com/openmfp/golang-commons/logger/testlogger"
 	"github.com/openmfp/golang-commons/sentry"
 )
@@ -76,7 +80,7 @@ func TestLifecycle(t *testing.T) {
 	t.Run("Lifecycle with a finalizer - finalization", func(t *testing.T) {
 		// Arrange
 		now := &metav1.Time{Time: time.Now()}
-		finalizers := []string{finalizer}
+		finalizers := []string{subroutineFinalizer}
 		instance := &testSupport.TestApiObject{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              name,
@@ -131,7 +135,7 @@ func TestLifecycle(t *testing.T) {
 	t.Run("Lifecycle with a finalizer - failing finalization subroutine", func(t *testing.T) {
 		// Arrange
 		now := &metav1.Time{Time: time.Now()}
-		finalizers := []string{finalizer}
+		finalizers := []string{subroutineFinalizer}
 		instance := &testSupport.TestApiObject{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              name,
@@ -264,7 +268,7 @@ func TestLifecycle(t *testing.T) {
 					Namespace:         namespace,
 					Generation:        2,
 					DeletionTimestamp: &metav1.Time{Time: time.Now()},
-					Finalizers:        []string{finalizer},
+					Finalizers:        []string{changeStatusSubroutineFinalizer},
 				},
 				Status: testSupport.TestStatus{
 					Some:               "string",
@@ -435,6 +439,8 @@ func TestLifecycle(t *testing.T) {
 		// Arrange
 		instance := &testSupport.TestApiObject{}
 		fakeClient := testSupport.CreateFakeClient(t, instance)
+		log, err := logger.New(logger.DefaultConfig())
+		assert.NoError(t, err)
 		m, err := manager.New(&rest.Config{}, manager.Options{
 			Scheme: fakeClient.Scheme(),
 		})
@@ -446,7 +452,7 @@ func TestLifecycle(t *testing.T) {
 		}
 
 		// Act
-		err = lm.SetupWithManager(m, 0, "testReconciler", instance, "test", tr)
+		err = lm.SetupWithManager(m, 0, "testReconciler", instance, "test", tr, log)
 
 		// Assert
 		assert.NoError(t, err)
@@ -505,6 +511,412 @@ func TestLifecycle(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, testErr, err)
 		assert.Equal(t, controllerruntime.Result{}, result)
+	})
+
+	t.Run("Lifecycle with manage conditions reconciles w/o subroutines", func(t *testing.T) {
+		// Arrange
+		instance := &implementConditions{
+			testSupport.TestApiObject{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       name,
+					Namespace:  namespace,
+					Generation: 1,
+				},
+				Status: testSupport.TestStatus{},
+			},
+		}
+
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		mgr, _ := createLifecycleManager([]Subroutine{}, fakeClient)
+		mgr.WithConditionManagement()
+
+		// Act
+		_, err := mgr.Reconcile(ctx, request, instance)
+
+		assert.NoError(t, err)
+		assert.Len(t, instance.Status.Conditions, 1)
+		assert.Equal(t, instance.Status.Conditions[0].Type, ConditionReady)
+		assert.Equal(t, instance.Status.Conditions[0].Status, metav1.ConditionTrue)
+		assert.Equal(t, instance.Status.Conditions[0].Message, "The resource is ready")
+	})
+
+	t.Run("Lifecycle with manage conditions reconciles with subroutine", func(t *testing.T) {
+		// Arrange
+		instance := &implementConditions{
+			testSupport.TestApiObject{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       name,
+					Namespace:  namespace,
+					Generation: 1,
+				},
+				Status: testSupport.TestStatus{},
+			},
+		}
+
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		mgr, _ := createLifecycleManager([]Subroutine{
+			changeStatusSubroutine{
+				client: fakeClient,
+			}}, fakeClient)
+		mgr.WithConditionManagement()
+
+		// Act
+		_, err := mgr.Reconcile(ctx, request, instance)
+
+		assert.NoError(t, err)
+		assert.Len(t, instance.Status.Conditions, 2)
+		assert.Equal(t, ConditionReady, instance.Status.Conditions[0].Type)
+		assert.Equal(t, metav1.ConditionTrue, instance.Status.Conditions[0].Status)
+		assert.Equal(t, "The resource is ready", instance.Status.Conditions[0].Message)
+		assert.Equal(t, "changeStatus_Ready", instance.Status.Conditions[1].Type)
+		assert.Equal(t, metav1.ConditionTrue, instance.Status.Conditions[1].Status)
+		assert.Equal(t, "The subroutine is complete", instance.Status.Conditions[1].Message)
+	})
+
+	t.Run("Lifecycle with manage conditions reconciles with subroutine failing Status update", func(t *testing.T) {
+		// Arrange
+		instance := &implementConditions{
+			testSupport.TestApiObject{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       name,
+					Namespace:  namespace,
+					Generation: 1,
+				},
+				Status: testSupport.TestStatus{},
+			},
+		}
+
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		mgr, _ := createLifecycleManager([]Subroutine{
+			changeStatusSubroutine{
+				client: fakeClient,
+			}}, fakeClient)
+		mgr.WithConditionManagement()
+
+		// Act
+		_, err := mgr.Reconcile(ctx, request, instance)
+
+		assert.NoError(t, err)
+		assert.Len(t, instance.Status.Conditions, 2)
+		assert.Equal(t, ConditionReady, instance.Status.Conditions[0].Type)
+		assert.Equal(t, metav1.ConditionTrue, instance.Status.Conditions[0].Status)
+		assert.Equal(t, "The resource is ready", instance.Status.Conditions[0].Message)
+		assert.Equal(t, "changeStatus_Ready", instance.Status.Conditions[1].Type)
+		assert.Equal(t, metav1.ConditionTrue, instance.Status.Conditions[1].Status)
+		assert.Equal(t, "The subroutine is complete", instance.Status.Conditions[1].Message)
+	})
+
+	t.Run("Lifecycle with manage conditions finalizes with multiple subroutines partially succeeding", func(t *testing.T) {
+		// Arrange
+		instance := &implementConditions{
+			testSupport.TestApiObject{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              name,
+					Namespace:         namespace,
+					Generation:        1,
+					DeletionTimestamp: &metav1.Time{Time: time.Now()},
+					Finalizers:        []string{failureScenarioSubroutineFinalizer, changeStatusSubroutineFinalizer},
+				},
+				Status: testSupport.TestStatus{},
+			},
+		}
+
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		mgr, _ := createLifecycleManager([]Subroutine{
+			failureScenarioSubroutine{},
+			changeStatusSubroutine{client: fakeClient}}, fakeClient)
+		mgr.WithConditionManagement()
+
+		// Act
+		_, err := mgr.Reconcile(ctx, request, instance)
+
+		assert.Error(t, err)
+		assert.Len(t, instance.Status.Conditions, 3)
+		assert.Equal(t, ConditionReady, instance.Status.Conditions[0].Type)
+		assert.Equal(t, metav1.ConditionFalse, instance.Status.Conditions[0].Status)
+		assert.Equal(t, "The resource is not ready", instance.Status.Conditions[0].Message)
+		assert.Equal(t, "changeStatus_Finalize", instance.Status.Conditions[1].Type, "")
+		assert.Equal(t, metav1.ConditionTrue, instance.Status.Conditions[1].Status)
+		assert.Equal(t, "The subroutine finalization is complete", instance.Status.Conditions[1].Message)
+		assert.Equal(t, "failureScenarioSubroutine_Finalize", instance.Status.Conditions[2].Type)
+		assert.Equal(t, metav1.ConditionFalse, instance.Status.Conditions[2].Status)
+		assert.Equal(t, "The subroutine finalization has an error: failureScenarioSubroutine", instance.Status.Conditions[2].Message)
+	})
+
+	t.Run("Lifecycle with manage conditions reconciles with RequeAfter subroutine", func(t *testing.T) {
+		// Arrange
+		instance := &implementConditions{
+			testSupport.TestApiObject{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       name,
+					Namespace:  namespace,
+					Generation: 1,
+				},
+				Status: testSupport.TestStatus{},
+			},
+		}
+
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		mgr, _ := createLifecycleManager([]Subroutine{
+			failureScenarioSubroutine{Retry: false, RequeAfter: true}}, fakeClient)
+		mgr.WithConditionManagement()
+
+		// Act
+		_, err := mgr.Reconcile(ctx, request, instance)
+
+		assert.NoError(t, err)
+		assert.Len(t, instance.Status.Conditions, 2)
+		assert.Equal(t, ConditionReady, instance.Status.Conditions[0].Type)
+		assert.Equal(t, metav1.ConditionFalse, instance.Status.Conditions[0].Status)
+		assert.Equal(t, "The resource is not ready", instance.Status.Conditions[0].Message)
+		assert.Equal(t, "failureScenarioSubroutine_Ready", instance.Status.Conditions[1].Type)
+		assert.Equal(t, metav1.ConditionUnknown, instance.Status.Conditions[1].Status)
+		assert.Equal(t, "The subroutine finalization is processing", instance.Status.Conditions[1].Message)
+	})
+
+	t.Run("Lifecycle with manage conditions reconciles with Error subroutine", func(t *testing.T) {
+		// Arrange
+		instance := &implementConditions{
+			testSupport.TestApiObject{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       name,
+					Namespace:  namespace,
+					Generation: 1,
+				},
+				Status: testSupport.TestStatus{},
+			},
+		}
+
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		mgr, _ := createLifecycleManager([]Subroutine{
+			failureScenarioSubroutine{Retry: false, RequeAfter: false}}, fakeClient)
+		mgr.WithConditionManagement()
+
+		// Act
+		_, err := mgr.Reconcile(ctx, request, instance)
+
+		assert.Error(t, err)
+		assert.Len(t, instance.Status.Conditions, 2)
+		assert.Equal(t, ConditionReady, instance.Status.Conditions[0].Type)
+		assert.Equal(t, metav1.ConditionFalse, instance.Status.Conditions[0].Status)
+		assert.Equal(t, "The resource is not ready", instance.Status.Conditions[0].Message)
+		assert.Equal(t, "failureScenarioSubroutine_Ready", instance.Status.Conditions[1].Type)
+		assert.Equal(t, metav1.ConditionFalse, instance.Status.Conditions[1].Status)
+		assert.Equal(t, "The subroutine has an error: failureScenarioSubroutine", instance.Status.Conditions[1].Message)
+	})
+
+	t.Run("Lifecycle with manage conditions not implementing the interface", func(t *testing.T) {
+		// Arrange
+		instance := &notImplementingSpreadReconciles{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       name,
+				Namespace:  namespace,
+				Generation: 1,
+			},
+			Status: testSupport.TestStatus{
+				Some:               "string",
+				ObservedGeneration: 0,
+			},
+		}
+
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		mgr, _ := createLifecycleManager([]Subroutine{
+			changeStatusSubroutine{
+				client: fakeClient,
+			},
+		}, fakeClient)
+		mgr.WithConditionManagement()
+
+		// Act
+		_, err := mgr.Reconcile(ctx, request, instance)
+
+		assert.Error(t, err)
+		assert.Equal(t, "manageConditions is enabled, but instance does not implement RuntimeObjectConditions interface. This is a programming error", err.Error())
+	})
+
+	t.Run("Lifecycle with manage conditions failing finalize", func(t *testing.T) {
+		// Arrange
+		instance := &implementConditions{
+			testSupport.TestApiObject{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              name,
+					Namespace:         namespace,
+					Generation:        1,
+					Finalizers:        []string{failureScenarioSubroutineFinalizer},
+					DeletionTimestamp: &metav1.Time{Time: time.Now()},
+				},
+				Status: testSupport.TestStatus{
+					Some:               "string",
+					ObservedGeneration: 0,
+				},
+			},
+		}
+
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		mgr, _ := createLifecycleManager([]Subroutine{failureScenarioSubroutine{}}, fakeClient)
+		mgr.WithConditionManagement()
+
+		// Act
+		_, err := mgr.Reconcile(ctx, request, instance)
+
+		assert.Error(t, err)
+		assert.Equal(t, "failureScenarioSubroutine", err.Error())
+	})
+
+	t.Run("Test Lifecycle setupWithManager /w conditions and expecting no error", func(t *testing.T) {
+		// Arrange
+		instance := &implementConditions{}
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		m, err := manager.New(&rest.Config{}, manager.Options{Scheme: fakeClient.Scheme()})
+		assert.NoError(t, err)
+
+		lm, log := createLifecycleManager([]Subroutine{}, fakeClient)
+		lm = lm.WithConditionManagement()
+		tr := &testReconciler{lifecycleManager: lm}
+
+		// Act
+		err = lm.SetupWithManager(m, 0, "testReconciler", instance, "test", tr, log.Logger)
+
+		// Assert
+		assert.NoError(t, err)
+	})
+
+	t.Run("Test Lifecycle setupWithManager /w conditions and expecting error", func(t *testing.T) {
+		// Arrange
+		instance := &notImplementingSpreadReconciles{}
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		m, err := manager.New(&rest.Config{}, manager.Options{Scheme: fakeClient.Scheme()})
+		assert.NoError(t, err)
+
+		lm, log := createLifecycleManager([]Subroutine{}, fakeClient)
+		lm = lm.WithConditionManagement()
+		tr := &testReconciler{lifecycleManager: lm}
+
+		// Act
+		err = lm.SetupWithManager(m, 0, "testReconciler", instance, "test", tr, log.Logger)
+
+		// Assert
+		assert.Error(t, err)
+	})
+
+	t.Run("Test Lifecycle setupWithManager /w spread and expecting no error", func(t *testing.T) {
+		// Arrange
+		instance := &implementingSpreadReconciles{}
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		m, err := manager.New(&rest.Config{}, manager.Options{Scheme: fakeClient.Scheme()})
+		assert.NoError(t, err)
+
+		lm, log := createLifecycleManager([]Subroutine{}, fakeClient)
+		lm = lm.WithSpreadingReconciles()
+		tr := &testReconciler{lifecycleManager: lm}
+
+		// Act
+		err = lm.SetupWithManager(m, 0, "testReconciler", instance, "test", tr, log.Logger)
+
+		// Assert
+		assert.NoError(t, err)
+	})
+
+	t.Run("Test Lifecycle setupWithManager /w spread and expecting a error", func(t *testing.T) {
+		// Arrange
+		instance := &notImplementingSpreadReconciles{}
+		fakeClient := testSupport.CreateFakeClient(t, instance)
+
+		m, err := manager.New(&rest.Config{}, manager.Options{Scheme: fakeClient.Scheme()})
+		assert.NoError(t, err)
+
+		lm, log := createLifecycleManager([]Subroutine{}, fakeClient)
+		lm = lm.WithSpreadingReconciles()
+		tr := &testReconciler{lifecycleManager: lm}
+
+		// Act
+		err = lm.SetupWithManager(m, 0, "testReconciler", instance, "test", tr, log.Logger)
+
+		// Assert
+		assert.Error(t, err)
+	})
+}
+
+func TestUpdateStatus(t *testing.T) {
+	clientMock := new(mocks.Client)
+	subresourceClient := new(mocks.SubResourceClient)
+
+	logcfg := logger.DefaultConfig()
+	logcfg.NoJSON = true
+	log, err := logger.New(logcfg)
+	assert.NoError(t, err)
+
+	t.Run("Test UpdateStatus with no changes", func(t *testing.T) {
+		original := &implementingSpreadReconciles{
+			testSupport.TestApiObject{
+				Status: testSupport.TestStatus{
+					Some: "string",
+				},
+			}}
+
+		// When
+		err := updateStatus(context.Background(), clientMock, original, original, log, nil)
+
+		// Then
+		assert.NoError(t, err)
+	})
+
+	t.Run("Test UpdateStatus with update error", func(t *testing.T) {
+		original := &implementingSpreadReconciles{
+			testSupport.TestApiObject{
+				Status: testSupport.TestStatus{
+					Some: "string",
+				},
+			}}
+		current := &implementingSpreadReconciles{
+			testSupport.TestApiObject{
+				Status: testSupport.TestStatus{
+					Some: "string1",
+				},
+			}}
+
+		clientMock.EXPECT().Status().Return(subresourceClient)
+		subresourceClient.EXPECT().Update(mock.Anything, mock.Anything, mock.Anything).
+			Return(errors.NewBadRequest("internal error"))
+
+		// When
+		err := updateStatus(context.Background(), clientMock, original, current, log, nil)
+
+		// Then
+		assert.Error(t, err)
+		assert.Equal(t, "internal error", err.Error())
+	})
+
+	t.Run("Test UpdateStatus with no status object (original)", func(t *testing.T) {
+		original := &testSupport.TestNoStatusApiObject{}
+		current := &implementConditions{}
+		// When
+		err := updateStatus(context.Background(), clientMock, original, current, log, nil)
+
+		// Then
+		assert.Error(t, err)
+		assert.Equal(t, "status field not found in current object", err.Error())
+	})
+	t.Run("Test UpdateStatus with no status object (current)", func(t *testing.T) {
+		original := &implementConditions{}
+		current := &testSupport.TestNoStatusApiObject{}
+		// When
+		err := updateStatus(context.Background(), clientMock, original, current, log, nil)
+
+		// Then
+		assert.Error(t, err)
+		assert.Equal(t, "status field not found in current object", err.Error())
 	})
 }
 
