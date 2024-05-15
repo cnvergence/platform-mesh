@@ -38,7 +38,7 @@ func TestLifecycle(t *testing.T) {
 		// Arrange
 		fakeClient := testSupport.CreateFakeClient(t, &testSupport.TestApiObject{})
 
-		mgr, logger := createLifecycleManager([]Subroutine{}, fakeClient)
+		mgr, log := createLifecycleManager([]Subroutine{}, fakeClient)
 
 		// Act
 		result, err := mgr.Reconcile(ctx, request, &testSupport.TestApiObject{})
@@ -46,7 +46,7 @@ func TestLifecycle(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		logMessages, err := logger.GetLogMessages()
+		logMessages, err := log.GetLogMessages()
 		assert.NoError(t, err)
 		assert.Equal(t, len(logMessages), 2)
 		assert.Equal(t, logMessages[0].Message, "start reconcile")
@@ -172,7 +172,7 @@ func TestLifecycle(t *testing.T) {
 		}
 		fakeClient := testSupport.CreateFakeClient(t, instance)
 
-		mgr, logger := createLifecycleManager([]Subroutine{}, fakeClient)
+		mgr, log := createLifecycleManager([]Subroutine{}, fakeClient)
 
 		// Act
 		result, err := mgr.Reconcile(ctx, request, instance)
@@ -180,7 +180,7 @@ func TestLifecycle(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		logMessages, err := logger.GetLogMessages()
+		logMessages, err := log.GetLogMessages()
 		assert.NoError(t, err)
 		assert.Equal(t, len(logMessages), 3)
 		assert.Equal(t, logMessages[0].Message, "start reconcile")
@@ -200,7 +200,7 @@ func TestLifecycle(t *testing.T) {
 
 		fakeClient := testSupport.CreateFakeClient(t, instance)
 
-		mgr, logger := createLifecycleManager([]Subroutine{
+		mgr, log := createLifecycleManager([]Subroutine{
 			changeStatusSubroutine{
 				client: fakeClient,
 			},
@@ -212,7 +212,7 @@ func TestLifecycle(t *testing.T) {
 		// Assert
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		logMessages, err := logger.GetLogMessages()
+		logMessages, err := log.GetLogMessages()
 		assert.NoError(t, err)
 		assert.Equal(t, len(logMessages), 5)
 		assert.Equal(t, logMessages[0].Message, "start reconcile")
@@ -296,6 +296,7 @@ func TestLifecycle(t *testing.T) {
 
 	t.Run("Lifecycle with spread reconciles skips if the generation is the same", func(t *testing.T) {
 		// Arrange
+		nextReconcileTime := metav1.NewTime(time.Now().Add(1 * time.Hour))
 		instance := &implementingSpreadReconciles{
 			testSupport.TestApiObject{
 				ObjectMeta: metav1.ObjectMeta{
@@ -306,6 +307,7 @@ func TestLifecycle(t *testing.T) {
 				Status: testSupport.TestStatus{
 					Some:               "string",
 					ObservedGeneration: 1,
+					NextReconcileTime:  nextReconcileTime,
 				},
 			},
 		}
