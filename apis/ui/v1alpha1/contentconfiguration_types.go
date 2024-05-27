@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,18 +29,36 @@ type ContentConfigurationSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of ContentConfiguration. Edit contentconfiguration_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// +kubebuilder:validation:RemoteConfiguration:
+	RemoteConfiguration RemoteConfiguration `json:"remoteConfiguration,omitempty"`
+
+	InlineConfiguration InlineConfiguration `json:"inlineConfiguration,omitempty"`
+}
+
+type InlineConfiguration struct {
+	// +kubebuilder:validation:Enum=yaml;json
+	ContentType string `json:"contentType,omitempty"` // "yaml" or "json"
+	Content     string `json:"content,omitempty"`
+}
+
+type RemoteConfiguration struct {
+	URL            string         `json:"url,omitempty"`
+	Authentication Authentication `json:"authentication,omitempty"`
+}
+
+type Authentication struct {
+	Type      string                      `json:"type,omitempty"`
+	SecretRef corev1.LocalObjectReference `json:"secretRef,omitempty"`
 }
 
 // ContentConfigurationStatus defines the observed state of ContentConfiguration
 type ContentConfigurationStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Conditions         []metav1.Condition `json:"conditions,omitempty"`
-	Namespace          *string            `json:"namespace,omitempty"`
-	ObservedGeneration int64              `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`
-	NextReconcileTime  metav1.Time        `json:"nextReconcileTime,omitempty"`
+	Conditions          []metav1.Condition `json:"conditions,omitempty"`
+	ObservedGeneration  int64              `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`
+	NextReconcileTime   metav1.Time        `json:"nextReconcileTime,omitempty"`
+	ConfigurationResult string             `json:"configurationResult,omitempty"`
 }
 
 //+kubebuilder:object:root=true

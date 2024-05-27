@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.15.0
-  name: contentconfigurations.cache.core.openmfp.io
+  name: contentconfigurations.core.openmfp.io
 spec:
-  group: cache.core.openmfp.io
+  group: core.openmfp.io
   names:
     kind: ContentConfiguration
     listKind: ContentConfigurationList
@@ -40,10 +40,44 @@ spec:
           spec:
             description: ContentConfigurationSpec defines the desired state of ContentConfiguration
             properties:
-              foo:
-                description: Foo is an example field of ContentConfiguration. Edit
-                  contentconfiguration_types.go to remove/update
-                type: string
+              inlineConfiguration:
+                properties:
+                  content:
+                    type: string
+                  contentType:
+                    enum:
+                    - yaml
+                    - json
+                    type: string
+                type: object
+              remoteConfiguration:
+                properties:
+                  authentication:
+                    properties:
+                      secretRef:
+                        description: |-
+                          LocalObjectReference contains enough information to let you locate the
+                          referenced object inside the same namespace.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              TODO: Add other useful fields. apiVersion, kind, uid?
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      type:
+                        type: string
+                    type: object
+                  url:
+                    type: string
+                type: object
             type: object
           status:
             description: ContentConfigurationStatus defines the observed state of
@@ -121,7 +155,7 @@ spec:
                   - type
                   type: object
                 type: array
-              namespace:
+              configurationResult:
                 type: string
               nextReconcileTime:
                 format: date-time
