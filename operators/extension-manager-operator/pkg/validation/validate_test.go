@@ -1,6 +1,7 @@
 package validation
 
 import (
+	"encoding/json"
 	"log"
 	"testing"
 
@@ -38,7 +39,7 @@ func TestValidate(t *testing.T) {
 			name:        "valid_YAML",
 			input:       validation_test.GetYAMLFixture(validation_test.GetValidYAML()),
 			contentType: "yaml",
-			expected:    validation_test.GetJSONFixture(validation_test.GetValidJSON()),
+			expected:    validation_test.GetYAMLFixture(validation_test.GetValidYAML()),
 			expectError: false,
 		},
 		{
@@ -75,7 +76,7 @@ func TestValidate(t *testing.T) {
 			errorMsg:    "empty input provided",
 		},
 		{
-			name:        "validating_JSON_data_ERROR",
+			name:        "validating_with_incorrect_schema_ERROR",
 			schema:      []byte("123"),
 			contentType: "json",
 			input:       validation_test.GetJSONFixture(validation_test.GetValidJSON()),
@@ -90,8 +91,14 @@ func TestValidate(t *testing.T) {
 			contentType: "yaml",
 			expected:    "",
 			expectError: true,
-			errorMsg: "json: cannot unmarshal string into Go struct " +
-				"field LuigiConfigData.luigiConfigFragment.data.nodes of type []validation.Node",
+			errorMsg:    "The document is not valid:",
+		},
+		{
+			name:        "valid_JSON_empty_locale",
+			input:       validation_test.GetJSONFixture(validation_test.GetValidJSONWithEmptyLocale()),
+			contentType: "json",
+			expected:    validation_test.GetJSONFixture(validation_test.GetValidJSONWithEmptyLocale()),
+			expectError: false,
 		},
 	}
 
@@ -133,8 +140,8 @@ func Test_validateSchema(t *testing.T) {
 			input: ContentConfigurationTypeMock{
 				Name: 1, // wrong type
 			},
-			expectedErrMsg: "The document is not valid:\n[luigiConfigFragment is required (root): " +
-				"Additional property surname is not allowed field 'name' is invalid, got '%!s(<nil>)', expected 'string']",
+			expectedErrMsg: "The document is not valid:\n[luigiConfigFragment is required field 'name'" +
+				" is invalid, got '%!s(<nil>)'",
 		},
 		{
 			name: "Invalid_JSON",
@@ -142,7 +149,7 @@ func Test_validateSchema(t *testing.T) {
 				Name:    "John",
 				Surname: make(chan int), // invalid type for JSON marshaling
 			},
-			expectedErrMsg: "error marshaling input to JSON",
+			expectedErrMsg: "error validating JSON data",
 		},
 		{
 			name: "luigiConfigFragment_is_required",
@@ -216,8 +223,13 @@ func Test_validateSchema(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateSchema(schema, tt.input)
+			byteArray, _ := json.Marshal(tt.input)
+
+			err := validateSchemaBytes(schema, byteArray)
 			assert.Error(t, err)
+			actualStr := err.Error()
+			expectedStr := tt.expectedErrMsg
+			assert.Contains(t, actualStr, expectedStr)
 			assert.Contains(t, err.Error(), tt.expectedErrMsg)
 		})
 	}
@@ -231,4 +243,11 @@ func getJSONSchemaFixture() []byte {
 	}
 
 	return schemaJSON
+}
+
+func TestWithSchema(t *testing.T) {
+	cC := NewContentConfiguration()
+	empty := ""
+	err := cC.WithSchema([]byte(empty))
+	assert.Error(t, err)
 }

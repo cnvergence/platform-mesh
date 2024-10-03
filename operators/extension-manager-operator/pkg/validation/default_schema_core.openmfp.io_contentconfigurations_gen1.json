@@ -59,7 +59,8 @@
     },
     "Text": {
       "locale": {
-        "type": "string"
+        "type": "string",
+        "minLength": 0
       },
       "textDictionary": {
         "type": "object"
@@ -75,7 +76,7 @@
       "$ref": "#/$defs/LuigiConfigFragment"
     }
   },
-  "additionalProperties": false,
+  "additionalProperties": true,
   "type": "object",
   "required": ["name", "luigiConfigFragment"]
 }
