@@ -13,6 +13,8 @@ import (
 	"github.com/openmfp/golang-commons/controller/lifecycle"
 	"github.com/openmfp/golang-commons/errors"
 	"github.com/openmfp/golang-commons/logger"
+	"k8s.io/apimachinery/pkg/api/meta"
+	apimachinery "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -76,8 +78,22 @@ func (r *ContentConfigurationSubroutine) Process(
 	validatedConfig, err := r.validator.Validate(rawConfig, contentType)
 	if err != nil {
 		log.Err(err).Msg("failed to validate configuration")
-
-		return ctrl.Result{}, errors.NewOperatorError(err, false, true)
+		condition := apimachinery.Condition{
+			Type:    "Validated",
+			Status:  "False",
+			Reason:  "ValidationFailed",
+			Message: err.Error(),
+		}
+		meta.SetStatusCondition(&instance.Status.Conditions, condition)
+		return ctrl.Result{}, nil
+	} else {
+		condition := apimachinery.Condition{
+			Type:    "Validated",
+			Status:  "True",
+			Reason:  "ValidationSucceeded",
+			Message: "",
+		}
+		meta.SetStatusCondition(&instance.Status.Conditions, condition)
 	}
 
 	instance.Status.ConfigurationResult = validatedConfig

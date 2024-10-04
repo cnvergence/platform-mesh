@@ -18,6 +18,7 @@ import (
 	"github.com/openmfp/extension-content-operator/pkg/validation"
 	"github.com/openmfp/extension-content-operator/pkg/validation/validation_test"
 	golangCommonErrors "github.com/openmfp/golang-commons/errors"
+	apimachinery "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type ContentConfigurationSubroutineTestSuite struct {
@@ -116,7 +117,7 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestCreateAndUpdate_Error(
 	time.Sleep(1 * time.Second)
 
 	// Then
-	suite.Require().NotNil(errProcessInvalidConfig)
+	suite.Require().Nil(errProcessInvalidConfig)
 	// result shoundn't change
 	equal, cmpErr := compareYAML(
 		validation_test.GetYAMLFixture(validation_test.GetValidYAML()), contentConfiguration.Status.ConfigurationResult)
@@ -174,12 +175,6 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestProcessingConfig() {
 					ContentType: "yaml",
 				},
 			},
-			expectedError: golangCommonErrors.NewOperatorError(
-				errors.New(
-					"error unmarshalling YAML: yaml: unmarshal errors:\n  line 1: "+
-						"cannot unmarshal !!str `I am no...` into map[string]interface {}"),
-				false, true,
-			),
 		},
 		{
 			name: "InlineConfigJSON_OK",
@@ -199,9 +194,6 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestProcessingConfig() {
 					ContentType: "json",
 				},
 			},
-			expectedError: golangCommonErrors.NewOperatorError(
-				errors.New("error validating JSON data"), false, true,
-			),
 		},
 		{
 			name: "RemoteConfig_OK",
@@ -365,4 +357,90 @@ func compareYAML(doc1 string, doc2 string) (bool, error) {
 	}
 
 	return reflect.DeepEqual(obj1, obj2), nil
+}
+
+func (suite *ContentConfigurationSubroutineTestSuite) Test_IncompatibleSchemaUpdate() {
+	// Given
+	contentConfiguration := &cachev1alpha1.ContentConfiguration{
+		Spec: cachev1alpha1.ContentConfigurationSpec{
+			InlineConfiguration: cachev1alpha1.InlineConfiguration{
+				Content:     validation_test.GetYAMLFixture(validation_test.GetValidYAML()),
+				ContentType: "yaml",
+			},
+		},
+		Status: cachev1alpha1.ContentConfigurationStatus{
+			Conditions: []apimachinery.Condition{
+				{
+					Type:    "Ready",
+					Status:  "True",
+					Message: "The resource is ready",
+					Reason:  "Complete",
+				},
+				{
+					Message: "The subroutine is complete",
+					Reason:  "Complete",
+					Status:  "True",
+					Type:    "ContentConfigurationSubroutine_Ready",
+				},
+			},
+			ConfigurationResult: validation_test.GetYAMLFixture(validation_test.GetValidYAML()),
+		},
+	}
+
+	// Simulate incompatible schema update
+	contentConfiguration.Spec.InlineConfiguration.Content = validation_test.GetYAMLFixture(
+		validation_test.GetValidIncompatibleYAML(),
+	)
+
+	// When
+	result, err := suite.testObj.Process(context.Background(), contentConfiguration)
+
+	// Then: should keep previously valid and currently invalid result
+	suite.Require().Nil(err)
+	suite.Require().Empty(result)
+
+	cmp, cmpErr := compareYAML(
+		validation_test.GetJSONFixture(validation_test.GetValidJSON()),
+		contentConfiguration.Status.ConfigurationResult,
+	)
+	suite.Require().Nil(cmpErr)
+	suite.Require().True(cmp)
+	suite.Require().True(
+		getCondition(contentConfiguration.Status.Conditions, "Validated").Status == apimachinery.ConditionFalse,
+	)
+	suite.Require().Equal(
+		getCondition(contentConfiguration.Status.Conditions, "Validated").Reason, "ValidationFailed",
+	)
+
+	// make it valid and check if condition is removed
+	contentConfiguration.Spec.InlineConfiguration.Content = validation_test.GetYAMLFixture(validation_test.GetValidYAML())
+
+	// When
+	result, err = suite.testObj.Process(context.Background(), contentConfiguration)
+	suite.Require().Nil(err)
+	suite.Require().Empty(result)
+
+	cmp, cmpErr = compareYAML(
+		validation_test.GetYAMLFixture(validation_test.GetValidYAML()),
+		contentConfiguration.Status.ConfigurationResult,
+	)
+	suite.Require().NoError(cmpErr)
+	suite.Require().True(cmp)
+
+	suite.Require().Equal(
+		getCondition(contentConfiguration.Status.Conditions, "Validated").Reason, "ValidationSucceeded",
+	)
+	suite.Require().Equal(
+		getCondition(contentConfiguration.Status.Conditions, "Validated").Type, "Validated",
+	)
+
+}
+
+func getCondition(conditions []apimachinery.Condition, conditionType string) apimachinery.Condition { // nolint: unparam
+	for _, condition := range conditions {
+		if condition.Type == conditionType {
+			return condition
+		}
+	}
+	return apimachinery.Condition{}
 }

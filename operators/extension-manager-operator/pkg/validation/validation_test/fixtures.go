@@ -121,6 +121,26 @@ luigiConfigFragment:
 `
 }
 
+func GetValidIncompatibleYAML() string {
+	return `
+iAmOptionalCustomFieldThatShouldBeStored: iAmOptionalCustomValue
+name: overview
+luigiConfigFragment:
+ data:
+  nodeDefaults:
+    entityType: global
+    isolateView: true
+  nodes:
+  - entityType: global
+    pathSegment: home
+    label: Overview
+    icon: home
+  texts:
+  - textDictionary:
+      hello: Hallo
+`
+}
+
 func GetInvalidTypeYAML() string {
 	return `
 name: overview
@@ -180,4 +200,61 @@ luigiConfigFragment:
     textDictionary:
       hello: Hallo
 `
+}
+
+func GetluigiConfigFragment() string {
+	return ` {
+        "name": "accounts",
+        "creationTimestamp": "2022-05-17T11:37:17Z",
+        "luigiConfigFragment": {
+            "data": {
+              "nodes": [
+                {
+                  "pathSegment": "create",
+                  "hideFromNav": true,
+                  "entityType": "main",
+                  "loadingIndicator": {
+                    "enabled": false
+                  },
+                  "keepSelectedForChildren": true,
+                  "url": "https://some.url/modal/create",
+                  "children": []
+                },
+                {
+                  "pathSegment": "accounts",
+                  "label": "Accounts",
+                  "entityType": "main",
+                  "loadingIndicator": {
+                    "enabled": false
+                  },
+                  "keepSelectedForChildren": true,
+                  "url": "https://some.url/accounts",
+                  "children": [
+                    {
+                      "pathSegment": ":accountId",
+                      "hideFromNav": true,
+                      "keepSelectedForChildren": false,
+                      "defineEntity": {
+                        "id": "account"
+                      },
+                      "context": {
+                        "accountId": ":accountId"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "pathSegment": "overview",
+                  "label": "Overview",
+                  "entityType": "main.account",
+                  "loadingIndicator": {
+                    "enabled": false
+                  },
+                  "visibleForFeatureToggles": ["oldAccount"],
+                  "url": "https://some.url/accounts/:accountId"
+                }
+              ]
+            }
+          }
+      }`
 }
