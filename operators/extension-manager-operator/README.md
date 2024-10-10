@@ -156,7 +156,6 @@ kind delete cluster
 ```
 
 ## Support, Feedback, Contributing
-
 This project is open to feature requests/suggestions, bug reports etc. via [GitHub issues](https://github.com/openmfp/extension-content-operator/issues). Contribution and feedback are encouraged and always welcome. For more information about how to contribute, the project structure, as well as additional contribution information, see our [Contribution Guidelines](CONTRIBUTING.md).
 
 ## Security / Disclosure
