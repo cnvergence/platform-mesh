@@ -1,1 +1,1 @@
-# provider-service-mesh
+# platform-mesh
