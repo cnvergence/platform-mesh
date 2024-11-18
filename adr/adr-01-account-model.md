@@ -13,7 +13,9 @@ Evaluate implementation options for the account model in Platform Mesh using KCP
 
 ## Context and Problem Statement
 
-As part of the ApeiroRA project, we need to implement an account model for the Platform Mesh using KCP. The account model should be simple, scalable, and not locked to regions. It should support service accounts and instances, distinguish between services and applications, and allow for the decoupling of orthogonal aspects such as quotas, service validation, and access control. How can we implement this account model effectively using KCP and the Kubernetes Resource Model (KRM)?
+As part of the ApeiroRA project, we need to implement an account model for the Platform Mesh using KCP. The account model should be simple, scalable, and not locked to regions. 
+It should support service accounts and instances, distinguish between services and applications, and allow for the decoupling of orthogonal aspects such as quotas, service validation, and access control. 
+How can we implement this account model effectively using KCP and the Kubernetes Resource Model (KRM)?
 
 ## Decision Drivers
 
@@ -58,19 +60,16 @@ Cons:
 - May require additional controllers to manage account-specific operations
 - Could lead to overloading of workspace concepts
 
-### Option 3: External Database with KCP Integration
-
-This option involves using an external database to store account information, with a thin integration layer in KCP.
+### Option 3: KCP as a service that encapsulates the account model
+This option takes another level, by considering kcp as a service that can be consumed by other teams, and the account model is build on top of it.
 
 Pros:
-- Provides flexibility in storing complex account data
-- Allows for optimized querying and indexing of account information
-- Can easily accommodate provider-specific account details
+- Can leverage the existing KCP workspace model
+- Can be decoupled from KCP
 
 Cons:
-- Introduces additional complexity with external system dependency
-- May require additional synchronization mechanisms
-- Could potentially impact performance due to external system calls
+- Requires a team to support and maintain it
+- 
 
 ### Option 4: Hybrid Approach: CRD + KCP Workspace
 
