@@ -34,7 +34,10 @@ The account model that operates is platform specific. The account model is mostl
 
 ### Option 1: Custom Resource Definition (CRD) for Account Model
 
-This option involves creating a new CRD in KCP to define the account model, with accounts managed as custom resources. This option implements accounts as CRDs with a strict 1:1 mapping to KCP workspaces, using initializers for atomic creation and setup. The account CRD should be the minimum frame, not to grow. There need to be other ways to extend partner/customer specific account implementation for platform.
+This option involves creating a new CRD in that can be used to define the account model from an external persepctive but can be used in kcp, with accounts managed as custom resources. 
+This option implements accounts as CRDs with a strict 1:1 mapping to KCP workspaces, using initializers for atomic creation and setup. 
+The account CRD should be the minimum frame, not to grow. There need to be other ways to extend partner/customer specific account implementation for platform.
+The account model itself is living outside KCP and can be managed external from it, but kcp needs to work with that model to achive account models goals. 
 
 ```mermaid
 graph TD
@@ -192,9 +195,10 @@ Note: Owner is account owner of workspace, the account model is completely outsi
 
 ## Decision Outcome (Proposed)
 
+The proposal is to with option 1, and the poc for the MVP can then validate that decision and design for an account model implementation.
+
 ### Positive Consequences
 
-<!-- 1. Atomic Operations:
 - Guaranteed consistent account setup
 - Clear initialization status tracking
 - Built-in failure handling
@@ -203,20 +207,21 @@ Note: Owner is account owner of workspace, the account model is completely outsi
 - One-to-one account-workspace mapping
 - Explicit parent-child relationships
 - Clear resource ownership
+- decoupling of account from kcp core structure
 
 3. Extensibility:
-- Custom initializers for different providers
+- Custom initializers for different providers within kcp
 - Pluggable initialization steps
 - Support for future requirements
+- account model can be extended and defined as per need basis independent of kcp, but allows platform operators to custome to their own needs
 
 4. Operational Benefits:
 - Clear status tracking
 - Built-in retry mechanisms
-- Audit trail of account setup -->
+- Audit trail of account setup
 
 ### Negative Consequences
 
-<!-- 1. Complexity:
 - More complex initialization flow
 - Need for careful error handling
 - Potential for initialization deadlocks
@@ -224,7 +229,8 @@ Note: Owner is account owner of workspace, the account model is completely outsi
 2. Operational Overhead:
 - Need for initializer management
 - Potential for stuck initializations
-- More complex debugging -->
+- More complex debugging
+
 
 ## Risk Mitigation
 
