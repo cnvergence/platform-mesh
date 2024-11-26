@@ -4,7 +4,7 @@
 
 ## Deciders:
 - Mirza Kopic (I073426)
-- Bastian Ecterhoelter ()
+- Bastian Ecterhoelter (I347365)
 
 ## Date: TBD
 
