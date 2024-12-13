@@ -1,13 +1,13 @@
 > [!WARNING]
 > This Repository is under development and not ready for productive use. It is in an alpha stage. That means APIs and concepts may change on short notice including breaking changes or complete removal of apis.
 
-# openMFP - Extension Manager Operator
+# OpenMFP - Extension Manager Operator
 
 ## Description
 
-The extension-manager-operator implements the lifecycle management of a Kubernetes CRD `ContentConfiguration` resource, which is a Kubernetes Resource/API for configuration of Micro Frontends in openMFP.
+The extension-manager-operator implements the lifecycle management of a Kubernetes CRD `ContentConfiguration` resource, which is a Kubernetes Resource/API for configuration of Micro Frontends in OpenMFP.
 
-For reference, see the [RFC for openMFP Extension Management - CDM Processing](https://github.com/openmfp/architecture/blob/main/rfc/002-extension-content-configuration-processing.md).
+For reference, see the [RFC for OpenMFP Extension Management - CDM Processing](https://github.com/openmfp/architecture/blob/main/rfc/002-extension-content-configuration-processing.md).
 
 ## Features
 - Support for inline and remote content configurations. 
@@ -31,7 +31,7 @@ If you find any bug that may be a security problem, please follow our instructio
 
 ## Contributing
 
-Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for instructions on how to contribute to openMFP.
+Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file in this repository for instructions on how to contribute to OpenMFP.
 
 ## Code of Conduct
 
@@ -39,4 +39,4 @@ We as members, contributors, and leaders pledge to make participation in our com
 
 ## Licensing
 
-Copyright 2024 SAP SE or an SAP affiliate company and openMFP contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/openmfp/extension-manager-operator).
+Copyright 2024 SAP SE or an SAP affiliate company and OpenMFP contributors. Please see our [LICENSE](LICENSE) for copyright and license information. Detailed information including third-party components and their licensing/copyright information is available [via the REUSE tool](https://api.reuse.software/info/github.com/openmfp/extension-manager-operator).
