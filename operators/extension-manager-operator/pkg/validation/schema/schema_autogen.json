@@ -55,14 +55,14 @@
         "name": {
           "type": "string"
         },
-        "contentType": {
-          "type": "string"
-        },
         "creationTimestamp": {
           "type": "string"
         },
         "luigiConfigFragment": {
           "$ref": "#/$defs/LuigiConfigFragment"
+        },
+        "devUrl": {
+          "type": "string"
         }
       },
       "additionalProperties": false,

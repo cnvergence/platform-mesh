@@ -256,7 +256,6 @@ func GetluigiConfigFragment() string {
 func GetValidYaml_targetAppConfig_viewGroup() string {
 	return `{
   "name": "extension-manager",
-  "contentType": "json",
   "luigiConfigFragment": {
       "data": {
         "targetAppConfig": {
@@ -417,7 +416,6 @@ luigiConfigFragment:
 func GetValidYaml_targetAppConfig_viewGroup2() string {
 	return `{
     "name": "extension-manager",
-    "contentType": "json",
     "luigiConfigFragment": {
         "data": {
             "userSettings": {
@@ -3342,4 +3340,35 @@ func GetValidJSON_tech_docs() string {
               }
           }
       }`
+}
+
+func GetValidJSON_devUrl() string {
+	return `{
+    "devUrl": "https://dev-url.com",
+		"luigiConfigFragment": {
+			"data": {
+				"nodeDefaults": {
+					"entityType": "global",
+					"isolateView": true
+				},
+				"nodes": [
+					{
+						"entityType": "global",
+						"icon": "home",
+						"label": "Overview",
+						"pathSegment": "home"
+					}
+				],
+				"texts": [
+					{
+						"locale": "de",
+						"textDictionary": {
+							"hello": "Hallo"
+						}
+					}
+				]
+			}
+		},
+		"name": "overview"
+	}`
 }

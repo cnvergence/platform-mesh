@@ -23,14 +23,14 @@ func TestValidate(t *testing.T) {
 		{
 			name:        "valid_JSON",
 			input:       validation_test.GetJSONFixture(validation_test.GetValidJSON()),
-			contentType: "json",
+			contentType: "Json",
 			expected:    validation_test.GetJSONFixture(validation_test.GetValidJSON()),
 			expectError: false,
 		},
 		{
 			name:        "invalid_JSON_empty_input_ERROR",
 			input:       validation_test.GetJSONFixture(`{"name": "overview",`),
-			contentType: "json",
+			contentType: "JSON",
 			expected:    "",
 			expectError: true,
 			errorMsg:    "empty input provided",
@@ -45,7 +45,7 @@ func TestValidate(t *testing.T) {
 		{
 			name:        "unmarshalling_YAML_ERROR",
 			input:       validation_test.GetYAMLFixture("!2"),
-			contentType: "yaml",
+			contentType: "Yaml",
 			expected:    "",
 			expectError: true,
 			errorMsg:    "error unmarshalling YAML: yaml:",
@@ -53,7 +53,7 @@ func TestValidate(t *testing.T) {
 		{
 			name:        "the_document_is_not_valid_ERROR",
 			input:       validation_test.GetYAMLFixture(`2!`),
-			contentType: "yaml",
+			contentType: "YAML",
 			expected:    "",
 			expectError: true,
 			errorMsg: "error unmarshalling YAML: yaml: unmarshal errors:\n  line 1: " +
@@ -240,6 +240,14 @@ func TestValidate(t *testing.T) {
 			input:       validation_test.GetJSONFixture(validation_test.GetValidJSON_tech_docs()),
 			contentType: "json",
 			expected:    validation_test.GetJSONFixture(validation_test.GetValidJSON_tech_docs()),
+			expectError: false,
+			schema:      nil,
+		},
+		{
+			name:        "devUrl",
+			input:       validation_test.GetJSONFixture(validation_test.GetValidJSON_devUrl()),
+			contentType: "json",
+			expected:    validation_test.GetJSONFixture(validation_test.GetValidJSON_devUrl()),
 			expectError: false,
 			schema:      nil,
 		},
