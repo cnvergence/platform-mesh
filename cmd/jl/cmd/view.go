@@ -66,13 +66,15 @@ func ViewLog(_ *cobra.Command, _ []string) { // coverage-ignore
 	if len(inputFile) > 0 {
 		file, err := os.Open(inputFile)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error opening file:", err)
-			os.Exit(1)
+			printErrOut("Error opening file:", err)
+			panic(err)
 		}
-		defer file.Close()
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil {
+				printErrOut("Error closing file:", closeErr)
+			}
+		}()
 		scanner = bufio.NewScanner(file)
-	} else {
-		scanner = bufio.NewScanner(os.Stdin)
 	}
 
 	for scanner.Scan() {
@@ -93,7 +95,7 @@ func ViewLog(_ *cobra.Command, _ []string) { // coverage-ignore
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error reading input:", err)
+		printErrOut("Error reading input:", err)
 		os.Exit(1)
 	}
 }
@@ -173,4 +175,12 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+func printErrOut(msg string, err error) {
+	_, printErr := fmt.Fprintln(os.Stderr, msg, err)
+	if printErr != nil {
+		// Fallback is to print to stdout instead
+		fmt.Println(msg, err)
+	}
 }
