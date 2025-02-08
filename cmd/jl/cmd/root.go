@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/openmfp/jl/internal/util"
 )
 
 const (
@@ -23,7 +25,9 @@ var focus string
 var inputFile string
 var raw bool
 var showNoJson bool
+var spaceLines bool
 var selector []string
+var numberOfLines int
 
 func init() {
 	viewCmd.Flags().StringVarP(&skip, "skip", "s", "", "comma separated list of keys to skip")
@@ -32,6 +36,8 @@ func init() {
 	viewCmd.Flags().BoolVarP(&raw, "raw", "r", false, "skip json keys")
 	viewCmd.Flags().StringSliceVar(&selector, "select", []string{}, "filter logs by selector key=value")
 	viewCmd.Flags().BoolVar(&showNoJson, "show-no-json", false, "also display log lines that are no json")
+	viewCmd.Flags().BoolVar(&spaceLines, "space-lines", false, "adds an extra line between each log line")
+	viewCmd.Flags().IntVarP(&numberOfLines, "number-of-lines", "n", 0, "number of lines to display")
 }
 
 var viewCmd = &cobra.Command{
@@ -51,7 +57,7 @@ jl -i data/input.log -s level,service
 jl -i data/input.log -f message,reconcile_id
 
 # Show logs stored in a file but focus only on the message property, display only rows that match the select expressions
-jl -i data/input.log -rf message,level --select=reconcile_id=fcdc26ae-7feb-4bf2-9058-f0c6666bc356 --select=level=info
+jl -i data/input.log -rf message,level --select=reconcile_id=some-reconcile-id --select=level=info
 `,
 	Run: ViewLog,
 }
@@ -66,18 +72,21 @@ func ViewLog(_ *cobra.Command, _ []string) { // coverage-ignore
 	if len(inputFile) > 0 {
 		file, err := os.Open(inputFile)
 		if err != nil {
-			printErrOut("Error opening file:", err)
+			util.PrintErrOut("Error opening file:", err)
 			panic(err)
 		}
 		defer func() {
 			if closeErr := file.Close(); closeErr != nil {
-				printErrOut("Error closing file:", closeErr)
+				util.PrintErrOut("Error closing file:", closeErr)
 			}
 		}()
 		scanner = bufio.NewScanner(file)
 	}
-
+	printedLines := 0
 	for scanner.Scan() {
+		if numberOfLines > 0 && printedLines >= numberOfLines {
+			os.Exit(0)
+		}
 		txt := scanner.Text()
 		var result interface{}
 		err := json.Unmarshal([]byte(txt), &result)
@@ -92,10 +101,11 @@ func ViewLog(_ *cobra.Command, _ []string) { // coverage-ignore
 		data := result.(map[string]interface{})
 		sortedKeys := generateKeys(data)
 		printLine(sortedKeys, data)
+		printedLines++
 	}
 
 	if err := scanner.Err(); err != nil {
-		printErrOut("Error reading input:", err)
+		util.PrintErrOut("Error reading input:", err)
 		os.Exit(1)
 	}
 }
@@ -124,63 +134,41 @@ func printLine(sortedKeys []string, data map[string]interface{}) {
 			keyColor = Red
 		}
 
-		keyStr := fmt.Sprintf("%s%s%s", keyColor, key, Reset)
-		valStr := fmt.Sprintf("%s%v%s", textColor, data[key], Reset)
+		if val, ok := data[key].(string); ok {
+			keyStr := fmt.Sprintf("%s%s%s", keyColor, key, Reset)
+			valStr := fmt.Sprintf("%s%v%s", textColor, val, Reset)
 
-		if raw {
-			line += fmt.Sprintf("%s ", valStr)
-		} else {
-			line += fmt.Sprintf("%s: %s, ", keyStr, valStr)
+			if raw {
+				line += fmt.Sprintf("%s ", valStr)
+			} else {
+				line += fmt.Sprintf("%s: %s, ", keyStr, valStr)
+			}
 		}
 	}
 	line = strings.Trim(line, ", ")
-	fmt.Printf("%s\n", line)
+	fmt.Println(line)
+	if spaceLines {
+		fmt.Println()
+	}
 }
 
 func generateKeys(data map[string]interface{}) []string {
 	sortedKeys := make([]string, 0, len(data))
 	keys := make([]string, 0, len(data))
-	toSkip := trim(strings.Split(skip, ","))
-	toFocus := trim(strings.Split(focus, ","))
+	toSkip := util.RemoveEmptyStrings(strings.Split(skip, ","))
+	toFocus := util.RemoveEmptyStrings(strings.Split(focus, ","))
 
 	if len(toFocus) == 0 {
 		for key := range data {
-			if !contains(toSkip, key) {
+			key = strings.TrimSpace(key)
+			if !util.ContainString(toSkip, key) {
 				keys = append(keys, key)
 			}
 		}
-
 		sort.Strings(keys)
-
 		sortedKeys = append(sortedKeys, keys...)
 	} else {
 		sortedKeys = toFocus
 	}
 	return sortedKeys
-}
-
-func trim(slice []string) []string {
-	var result []string
-	for _, s := range slice {
-		if len(strings.TrimSpace(s)) > 0 {
-			result = append(result, strings.TrimSpace(s))
-		}
-	}
-	return result
-}
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-func printErrOut(msg string, err error) {
-	_, printErr := fmt.Fprintln(os.Stderr, msg, err)
-	if printErr != nil {
-		// Fallback is to print to stdout instead
-		fmt.Println(msg, err)
-	}
 }
