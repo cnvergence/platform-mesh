@@ -17,16 +17,17 @@ exploring kubernetes log streams.
 kubectl logs my-pod -n my-namespace --follow | jl
 
 # Show logs stored in a file
-jl view -i data/input.log
+jl -i data/input.log
 
 # Show logs stored in a file but skip the level and service properties
-jl view -i data/input.log -s level,service
+jl -i data/input.log -s level,service
 
 # Show logs stored in a file but focus only on the message and reconcile_id property
-jl view -i data/input.log -f message,reconcile_id
+jl -i data/input.log -f message,reconcile_id
 
-# Show logs stored in a file but focus only on the message property, display only rows that match the select expression
-jl view -i data/input.log -rf message --select=reconcile_id=fcdc26ae-7feb-4bf2-9058-f0c6666bc356
+# Show logs stored in a file but focus only on the message property, display only rows that match the select expressions
+jl -i data/input.log -rf message,level --select=reconcile_id=fcdc26ae-7feb-4bf2-9058-f0c6666bc356 --select=level=info
+
 ```    
 
 ## Code of Conduct
