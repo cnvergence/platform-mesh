@@ -26,22 +26,26 @@ type CommonServiceConfig struct {
 	Environment             string `mapstructure:"environment"`
 	Region                  string `mapstructure:"region"`
 	Kubeconfig              string `mapstructure:"kubeconfig"`
-	Image                   struct {
+
+	Image struct {
 		Name string `mapstructure:"image-name"`
 		Tag  string `mapstructure:"image-tag"`
 	} `mapstructure:",squash"`
+
 	Log struct {
 		Level string `mapstructure:"log-level"`
 
 		NoJson bool `mapstructure:"no-json"`
 	} `mapstructure:",squash"`
-	ShutdownTimeout time.Duration `mapstructure:"shutdown-timeout"`
-	Probes          struct {
-		BindAddress string `mapstructure:"probes-bind-address"`
-	} `mapstructure:",squash"`
+
+	ShutdownTimeout        time.Duration `mapstructure:"shutdown-timeout"`
+	MetricsBindAddress     string        `mapstructure:"metric-bind-address"`
+	HealthProbeBindAddress string        `mapstructure:"health-probe-bind-address"`
+
 	LeaderElection struct {
 		Enabled bool `mapstructure:"leader-election-enabled"`
 	} `mapstructure:",squash"`
+
 	Sentry struct {
 		Dsn string `mapstructure:"sentry-dsn"`
 	} `mapstructure:",squash"`
@@ -50,18 +54,19 @@ type CommonServiceConfig struct {
 func CommonFlags() *pflag.FlagSet {
 	flagSet := pflag.NewFlagSet("common", pflag.ContinueOnError)
 
-	flagSet.String("debug-label-value", "", "Debug label value")
-	flagSet.Int("max-concurrent-reconciles", 1, "Max concurrent reconciles")
-	flagSet.String("environment", "local", "Environment")
-	flagSet.String("region", "local", "Region")
-	flagSet.String("image-name", "", "Image name")
-	flagSet.String("image-tag", "latest", "Image tag")
-	flagSet.String("log-level", "info", "Log level")
-	flagSet.Bool("log-no-json", false, "Log in JSON format")
-	flagSet.Duration("shutdown-timeout", 1, "Shutdown timeout")
-	flagSet.String("probes-bind-address", ":8090", "Probes bind address")
+	flagSet.String("debug-label-value", "", "Set the debug label value")
+	flagSet.Int("max-concurrent-reconciles", 1, "Set the max concurrent reconciles")
+	flagSet.String("environment", "local", "Set the environment")
+	flagSet.String("region", "local", "Set the region")
+	flagSet.String("image-name", "", "Set the image name")
+	flagSet.String("image-tag", "latest", "Set the image tag")
+	flagSet.String("log-level", "info", "Set the log level")
+	flagSet.Bool("no-json", false, "Disable JSON logging")
+	flagSet.Duration("shutdown-timeout", 1*time.Minute, "Set the shutdown timeout")
+	flagSet.String("metric-bind-address", ":8080", "Set the metrics bind address")
+	flagSet.String("health-probe-bind-address", ":8090", "Set the health probe bind address")
 	flagSet.Bool("leader-election-enabled", false, "Enable leader election")
-	flagSet.String("sentry-dsn", "", "Sentry DSN")
+	flagSet.String("sentry-dsn", "", "Set the Sentry DSN")
 
 	return flagSet
 }
@@ -127,11 +132,12 @@ func NewConfigFor(serviceConfig any) (*viper.Viper, error) {
 
 	v.AutomaticEnv()
 
-	err := v.BindPFlags(CommonFlags())
+	err := v.BindPFlags(generateFlagSet(serviceConfig))
 	if err != nil {
 		return nil, err
 	}
-	err = v.BindPFlags(generateFlagSet(serviceConfig))
+
+	err = v.BindPFlags(CommonFlags())
 
 	return v, err
 }
