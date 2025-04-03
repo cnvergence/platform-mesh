@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
+	openmfpconfig "github.com/openmfp/golang-commons/config"
 	openmfpcontext "github.com/openmfp/golang-commons/context"
 	"github.com/openmfp/golang-commons/logger"
 
@@ -97,11 +98,12 @@ func (suite *ContentConfigurationTestSuite) SetupSuite() {
 	})
 	suite.Nil(err)
 
-	appCfg := config.Config{}
+	defaultConfig := openmfpconfig.CommonServiceConfig{}
+	appCfg := config.OperatorConfig{}
 	appCfg.Subroutines.ContentConfiguration.Enabled = true
 
 	contentConfigurationReconciler := NewContentConfigurationReconciler(log, suite.kubernetesManager, appCfg)
-	err = contentConfigurationReconciler.SetupWithManager(suite.kubernetesManager, appCfg, log)
+	err = contentConfigurationReconciler.SetupWithManager(suite.kubernetesManager, defaultConfig, log)
 	suite.Nil(err)
 
 	go suite.startController()

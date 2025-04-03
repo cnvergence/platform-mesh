@@ -20,9 +20,11 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 
-	appConfig config.Config
-	v         *viper.Viper
-	log       *logger.Logger
+	operatorCfg config.OperatorConfig
+	serverCfg   config.ServerConfig
+	defaultCfg  openmfpconfig.CommonServiceConfig
+	v           *viper.Viper
+	log         *logger.Logger
 )
 
 var rootCmd = &cobra.Command{
@@ -42,17 +44,20 @@ func init() { // coverage-ignore
 	cobra.OnInitialize(initConfig, initLog)
 
 	var err error
-	v, err = openmfpconfig.NewConfigFor(&appConfig)
+	v, err = openmfpconfig.NewDefaultConfig(rootCmd)
 	if err != nil {
 		setupLog.Error(err, "Failed to create config")
 		os.Exit(1)
 	}
 
+	openmfpconfig.BindConfigToFlags(v, operatorCmd, &operatorCfg)
+	openmfpconfig.BindConfigToFlags(v, serverCmd, &serverCfg)
+
 }
 
 func initConfig() {
 	// Parse environment variables into the Config struct
-	if err := v.Unmarshal(&appConfig); err != nil {
+	if err := v.Unmarshal(&operatorCfg); err != nil {
 		setupLog.Error(err, "Unable to decode into struct")
 		os.Exit(1)
 	}
@@ -64,8 +69,8 @@ func initConfig() {
 
 func initLog() { // coverage-ignore
 	logcfg := logger.DefaultConfig()
-	logcfg.Level = appConfig.Log.Level
-	logcfg.NoJSON = appConfig.Log.NoJson
+	logcfg.Level = defaultCfg.Log.Level
+	logcfg.NoJSON = defaultCfg.Log.NoJson
 
 	var err error
 	log, err = logger.New(logcfg)

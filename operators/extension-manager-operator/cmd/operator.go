@@ -39,13 +39,13 @@ var operatorCmd = &cobra.Command{
 func RunController(cmd *cobra.Command, args []string) { // coverage-ignore
 	ctrl.SetLogger(log.ComponentLogger("controller-runtime").Logr())
 
-	ctx, _, shutdown := openmfpcontext.StartContext(log, appConfig, appConfig.ShutdownTimeout)
+	ctx, _, shutdown := openmfpcontext.StartContext(log, operatorCfg, defaultCfg.ShutdownTimeout)
 	defer shutdown()
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: appConfig.MetricsBindAddress,
+			BindAddress: defaultCfg.MetricsBindAddress,
 			TLSOpts: []func(*tls.Config){
 				func(c *tls.Config) {
 					log.Info().Msg("disabling http/2")
@@ -54,8 +54,8 @@ func RunController(cmd *cobra.Command, args []string) { // coverage-ignore
 			},
 		},
 		BaseContext:                   func() context.Context { return ctx },
-		HealthProbeBindAddress:        appConfig.HealthProbeBindAddress,
-		LeaderElection:                appConfig.LeaderElection.Enabled,
+		HealthProbeBindAddress:        defaultCfg.HealthProbeBindAddress,
+		LeaderElection:                defaultCfg.LeaderElection.Enabled,
 		LeaderElectionID:              "eengiex4.openmfp.org",
 		LeaderElectionReleaseOnCancel: true,
 	})
@@ -63,8 +63,8 @@ func RunController(cmd *cobra.Command, args []string) { // coverage-ignore
 		log.Fatal().Err(err).Msg("unable to start manager")
 	}
 
-	contentConfigurationReconciler := controller.NewContentConfigurationReconciler(log, mgr, appConfig)
-	if err := contentConfigurationReconciler.SetupWithManager(mgr, appConfig, log); err != nil {
+	contentConfigurationReconciler := controller.NewContentConfigurationReconciler(log, mgr, operatorCfg)
+	if err := contentConfigurationReconciler.SetupWithManager(mgr, defaultCfg, log); err != nil {
 		log.Fatal().Err(err).Str("controller", "ContentConfiguration").Msg("unable to create controller")
 	}
 

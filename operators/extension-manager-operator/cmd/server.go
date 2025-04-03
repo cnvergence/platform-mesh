@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"time"
 
+	openmfpconfig "github.com/openmfp/golang-commons/config"
 	openmfpcontext "github.com/openmfp/golang-commons/context"
 	"github.com/spf13/cobra"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -36,16 +37,20 @@ var serverCmd = &cobra.Command{
 	Run:   RunServer,
 }
 
+func init() {
+	openmfpconfig.BindConfigToFlags(v, serverCmd, &serverCfg)
+}
+
 func RunServer(cmd *cobra.Command, args []string) { // coverage-ignore
 	ctrl.SetLogger(log.ComponentLogger("server").Logr())
 
-	ctx, cancelMain, shutdown := openmfpcontext.StartContext(log, appConfig, appConfig.ShutdownTimeout)
+	ctx, cancelMain, shutdown := openmfpcontext.StartContext(log, operatorCfg, defaultCfg.ShutdownTimeout)
 	defer shutdown()
 
-	rt := server.CreateRouter(appConfig, log, validation.NewContentConfiguration())
+	rt := server.CreateRouter(serverCfg, log, validation.NewContentConfiguration())
 
 	server := &http.Server{
-		Addr:         ":" + appConfig.ServerPort,
+		Addr:         ":" + serverCfg.ServerPort,
 		Handler:      rt,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,

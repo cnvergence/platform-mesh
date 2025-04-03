@@ -13,7 +13,7 @@ import (
 )
 
 func CreateRouter(
-	appConfig config.Config,
+	appConfig config.ServerConfig,
 	log *logger.Logger,
 	validator validation.ExtensionConfiguration,
 ) *chi.Mux {

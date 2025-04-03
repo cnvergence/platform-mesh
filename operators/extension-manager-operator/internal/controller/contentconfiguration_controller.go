@@ -27,6 +27,7 @@ import (
 	"github.com/openmfp/extension-manager-operator/internal/config"
 	"github.com/openmfp/extension-manager-operator/pkg/subroutines"
 	"github.com/openmfp/extension-manager-operator/pkg/validation"
+	openmfpconfig "github.com/openmfp/golang-commons/config"
 	"github.com/openmfp/golang-commons/controller/lifecycle"
 	"github.com/openmfp/golang-commons/logger"
 )
@@ -41,7 +42,7 @@ type ContentConfigurationReconciler struct {
 	lifecycle *lifecycle.LifecycleManager
 }
 
-func NewContentConfigurationReconciler(log *logger.Logger, mgr ctrl.Manager, cfg config.Config) *ContentConfigurationReconciler {
+func NewContentConfigurationReconciler(log *logger.Logger, mgr ctrl.Manager, cfg config.OperatorConfig) *ContentConfigurationReconciler {
 	subs := []lifecycle.Subroutine{}
 	if cfg.Subroutines.ContentConfiguration.Enabled {
 		subs = append(subs, subroutines.NewContentConfigurationSubroutine(validation.NewContentConfiguration(), http.DefaultClient))
@@ -55,6 +56,6 @@ func (r *ContentConfigurationReconciler) Reconcile(ctx context.Context, req ctrl
 	return r.lifecycle.Reconcile(ctx, req, &cachev1alpha1.ContentConfiguration{})
 }
 
-func (r *ContentConfigurationReconciler) SetupWithManager(mgr ctrl.Manager, cfg config.Config, log *logger.Logger, eventPredicates ...predicate.Predicate) error {
+func (r *ContentConfigurationReconciler) SetupWithManager(mgr ctrl.Manager, cfg openmfpconfig.CommonServiceConfig, log *logger.Logger, eventPredicates ...predicate.Predicate) error {
 	return r.lifecycle.SetupWithManager(mgr, cfg.MaxConcurrentReconciles, contentConfigurationReconcilerName, &cachev1alpha1.ContentConfiguration{}, cfg.DebugLabelValue, r, log, eventPredicates...)
 }
