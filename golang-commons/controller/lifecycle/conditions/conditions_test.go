@@ -1,4 +1,4 @@
-package lifecycle
+package conditions
 
 import (
 	"errors"
@@ -11,22 +11,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 
-	"github.com/platform-mesh/golang-commons/controller/testSupport"
+	pmtesting "github.com/platform-mesh/golang-commons/controller/lifecycle/testing"
 	"github.com/platform-mesh/golang-commons/logger"
 )
-
-// Test LifecycleManager.WithConditionManagement
-func TestLifecycleManager_WithConditionManagement(t *testing.T) {
-	// Given
-	fakeClient := testSupport.CreateFakeClient(t, &testSupport.TestApiObject{})
-	_, log := createLifecycleManager([]Subroutine{}, fakeClient)
-
-	// When
-	l := NewLifecycleManager(log.Logger, "test-operator", "test-controller", fakeClient, []Subroutine{}).WithConditionManagement()
-
-	// Then
-	assert.True(t, true, l.manageConditions)
-}
 
 // Test the setReady function with an empty array
 func TestSetReady(t *testing.T) {
@@ -34,9 +21,9 @@ func TestSetReady(t *testing.T) {
 	t.Run("TestSetReady with empty array", func(t *testing.T) {
 		// Given
 		condition := []metav1.Condition{}
-
+		cm := NewConditionManager()
 		// When
-		setInstanceConditionReady(&condition, metav1.ConditionTrue)
+		cm.SetInstanceConditionReady(&condition, metav1.ConditionTrue)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -45,12 +32,13 @@ func TestSetReady(t *testing.T) {
 
 	t.Run("TestSetReady with existing condition", func(t *testing.T) {
 		// Given
+		cm := NewConditionManager()
 		condition := []metav1.Condition{
 			{Type: "test", Status: metav1.ConditionFalse},
 		}
 
 		// When
-		setInstanceConditionReady(&condition, metav1.ConditionTrue)
+		cm.SetInstanceConditionReady(&condition, metav1.ConditionTrue)
 
 		// Then
 		assert.Equal(t, 2, len(condition))
@@ -62,10 +50,11 @@ func TestSetUnknown(t *testing.T) {
 
 	t.Run("TestSetUnknown with empty array", func(t *testing.T) {
 		// Given
+		cm := NewConditionManager()
 		condition := []metav1.Condition{}
 
 		// When
-		setInstanceConditionUnknownIfNotSet(&condition)
+		cm.SetInstanceConditionUnknownIfNotSet(&condition)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -74,12 +63,13 @@ func TestSetUnknown(t *testing.T) {
 
 	t.Run("TestSetUnknown with existing ready condition", func(t *testing.T) {
 		// Given
+		cm := NewConditionManager()
 		condition := []metav1.Condition{
 			{Type: ConditionReady, Status: metav1.ConditionTrue},
 		}
 
 		// When
-		setInstanceConditionUnknownIfNotSet(&condition)
+		cm.SetInstanceConditionUnknownIfNotSet(&condition)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -111,9 +101,10 @@ func TestSetSubroutineConditionToUnknownIfNotSet(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			// Given
 			condition := []metav1.Condition{}
+			cm := NewConditionManager()
 
 			// When
-			setSubroutineConditionToUnknownIfNotSet(&condition, changeStatusSubroutine{}, tt.IsFinalize, log)
+			cm.SetSubroutineConditionToUnknownIfNotSet(&condition, pmtesting.ChangeStatusSubroutine{}, tt.IsFinalize, log)
 
 			// Then
 			assert.Equal(t, 1, len(condition))
@@ -124,12 +115,13 @@ func TestSetSubroutineConditionToUnknownIfNotSet(t *testing.T) {
 
 	t.Run("TestSetSubroutineConditionToUnknownIfNotSet with existing condition", func(t *testing.T) {
 		// Given
+		cm := NewConditionManager()
 		condition := []metav1.Condition{
 			{Type: "test", Status: metav1.ConditionFalse},
 		}
 
 		// When
-		setSubroutineConditionToUnknownIfNotSet(&condition, changeStatusSubroutine{}, false, log)
+		cm.SetSubroutineConditionToUnknownIfNotSet(&condition, pmtesting.ChangeStatusSubroutine{}, false, log)
 
 		// Then
 		assert.Equal(t, 2, len(condition))
@@ -138,14 +130,15 @@ func TestSetSubroutineConditionToUnknownIfNotSet(t *testing.T) {
 
 	t.Run("TestSetSubroutineConditionToUnknownIfNotSet with existing ready", func(t *testing.T) {
 		// Given
-		subroutine := changeStatusSubroutine{}
+		cm := NewConditionManager()
+		subroutine := pmtesting.ChangeStatusSubroutine{}
 		condition := []metav1.Condition{
 			{Type: "test", Status: metav1.ConditionFalse},
 			{Type: fmt.Sprintf("%s_Ready", subroutine.GetName()), Status: metav1.ConditionTrue},
 		}
 
 		// When
-		setSubroutineConditionToUnknownIfNotSet(&condition, subroutine, false, log)
+		cm.SetSubroutineConditionToUnknownIfNotSet(&condition, subroutine, false, log)
 
 		// Then
 		assert.Equal(t, 2, len(condition))
@@ -160,11 +153,12 @@ func TestSubroutineCondition(t *testing.T) {
 	// Add a test case to set a subroutine condition to ready if it was successfull
 	t.Run("TestSetSubroutineConditionReady", func(t *testing.T) {
 		// Given
+		cm := NewConditionManager()
 		condition := []metav1.Condition{}
-		subroutine := changeStatusSubroutine{}
+		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		setSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, nil, false, log)
+		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, nil, false, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -174,11 +168,12 @@ func TestSubroutineCondition(t *testing.T) {
 	// Add a test case to set a subroutine condition to unknown if it is still processing
 	t.Run("TestSetSubroutineConditionProcessing", func(t *testing.T) {
 		// Given
+		cm := NewConditionManager()
 		condition := []metav1.Condition{}
-		subroutine := changeStatusSubroutine{}
+		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		setSubroutineCondition(&condition, subroutine, controllerruntime.Result{RequeueAfter: 1 * time.Second}, nil, false, log)
+		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{RequeueAfter: 1 * time.Second}, nil, false, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -189,10 +184,11 @@ func TestSubroutineCondition(t *testing.T) {
 	t.Run("TestSetSubroutineConditionError", func(t *testing.T) {
 		// Given
 		condition := []metav1.Condition{}
-		subroutine := changeStatusSubroutine{}
+		cm := NewConditionManager()
+		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		setSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, errors.New("failed"), false, log)
+		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, errors.New("failed"), false, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -202,11 +198,12 @@ func TestSubroutineCondition(t *testing.T) {
 	// Add a test case to set a subroutine condition for isFinalize true
 	t.Run("TestSetSubroutineFinalizeConditionReady", func(t *testing.T) {
 		// Given
+		cm := NewConditionManager()
 		condition := []metav1.Condition{}
-		subroutine := changeStatusSubroutine{}
+		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		setSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, nil, true, log)
+		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, nil, true, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -217,10 +214,11 @@ func TestSubroutineCondition(t *testing.T) {
 	t.Run("TestSetSubroutineFinalizeConditionProcessing", func(t *testing.T) {
 		// Given
 		condition := []metav1.Condition{}
-		subroutine := changeStatusSubroutine{}
+		cm := NewConditionManager()
+		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		setSubroutineCondition(&condition, subroutine, controllerruntime.Result{RequeueAfter: 1 * time.Second}, nil, true, log)
+		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{RequeueAfter: 1 * time.Second}, nil, true, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -231,10 +229,11 @@ func TestSubroutineCondition(t *testing.T) {
 	t.Run("TestSetSubroutineFinalizeConditionError", func(t *testing.T) {
 		// Given
 		condition := []metav1.Condition{}
-		subroutine := changeStatusSubroutine{}
+		cm := NewConditionManager()
+		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		setSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, errors.New("failed"), true, log)
+		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, errors.New("failed"), true, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))

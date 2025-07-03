@@ -1,4 +1,4 @@
-package lifecycle
+package conditions
 
 import (
 	"fmt"
@@ -7,6 +7,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/runtimeobject"
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/subroutine"
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/platform-mesh/golang-commons/sentry"
 )
@@ -30,9 +32,10 @@ const (
 	subroutineMessageErrorFormatString      = "The %s has an error: %s"
 )
 
-func (l *LifecycleManager) WithConditionManagement() *LifecycleManager {
-	l.manageConditions = true
-	return l
+type ConditionManager struct{}
+
+func NewConditionManager() *ConditionManager {
+	return &ConditionManager{}
 }
 
 type RuntimeObjectConditions interface {
@@ -41,7 +44,7 @@ type RuntimeObjectConditions interface {
 }
 
 // Set the Condition of the instance to be ready
-func setInstanceConditionReady(conditions *[]metav1.Condition, status metav1.ConditionStatus) bool {
+func (c *ConditionManager) SetInstanceConditionReady(conditions *[]metav1.Condition, status metav1.ConditionStatus) bool {
 	var msg string
 	switch status {
 	case metav1.ConditionTrue:
@@ -60,15 +63,15 @@ func setInstanceConditionReady(conditions *[]metav1.Condition, status metav1.Con
 }
 
 // Set the Condition to be Unknown in case it is not set yet
-func setInstanceConditionUnknownIfNotSet(conditions *[]metav1.Condition) bool {
+func (c *ConditionManager) SetInstanceConditionUnknownIfNotSet(conditions *[]metav1.Condition) bool {
 	existingCondition := meta.FindStatusCondition(*conditions, ConditionReady)
 	if existingCondition == nil {
-		return setInstanceConditionReady(conditions, metav1.ConditionUnknown)
+		return c.SetInstanceConditionReady(conditions, metav1.ConditionUnknown)
 	}
 	return false
 }
 
-func setSubroutineConditionToUnknownIfNotSet(conditions *[]metav1.Condition, subroutine Subroutine, isFinalize bool, log *logger.Logger) bool {
+func (c *ConditionManager) SetSubroutineConditionToUnknownIfNotSet(conditions *[]metav1.Condition, subroutine subroutine.Subroutine, isFinalize bool, log *logger.Logger) bool {
 	conditionName, conditionMessage := getConditionNameAndMessage(subroutine, isFinalize)
 
 	existingCondition := meta.FindStatusCondition(*conditions, conditionName)
@@ -83,7 +86,7 @@ func setSubroutineConditionToUnknownIfNotSet(conditions *[]metav1.Condition, sub
 	return false
 }
 
-func getConditionNameAndMessage(subroutine Subroutine, isFinalize bool) (string, string) {
+func getConditionNameAndMessage(subroutine subroutine.Subroutine, isFinalize bool) (string, string) {
 	conditionName := fmt.Sprintf(subroutineReadyConditionFormatString, subroutine.GetName())
 	conditionMessage := "subroutine"
 	if isFinalize {
@@ -94,7 +97,7 @@ func getConditionNameAndMessage(subroutine Subroutine, isFinalize bool) (string,
 }
 
 // Set Subroutines Conditions
-func setSubroutineCondition(conditions *[]metav1.Condition, subroutine Subroutine, subroutineResult ctrl.Result, subroutineErr error, isFinalize bool, log *logger.Logger) bool {
+func (c *ConditionManager) SetSubroutineCondition(conditions *[]metav1.Condition, subroutine subroutine.Subroutine, subroutineResult ctrl.Result, subroutineErr error, isFinalize bool, log *logger.Logger) bool {
 	conditionName, conditionMessage := getConditionNameAndMessage(subroutine, isFinalize)
 
 	// processing complete
@@ -120,18 +123,18 @@ func setSubroutineCondition(conditions *[]metav1.Condition, subroutine Subroutin
 	return changed
 }
 
-func toRuntimeObjectConditionsInterface(instance RuntimeObject, log *logger.Logger) (RuntimeObjectConditions, error) {
+func (c *ConditionManager) ToRuntimeObjectConditionsInterface(instance runtimeobject.RuntimeObject, log *logger.Logger) (RuntimeObjectConditions, error) {
 	if obj, ok := instance.(RuntimeObjectConditions); ok {
 		return obj, nil
 	}
-	err := fmt.Errorf("manageConditions is enabled, but instance does not implement RuntimeObjectConditions interface. This is a programming error")
+	err := fmt.Errorf("ManageConditions is enabled, but instance does not implement RuntimeObjectConditions interface. This is a programming error")
 	log.Error().Err(err).Msg("instance does not implement RuntimeObjectConditions interface")
 	sentry.CaptureError(err, nil)
 	return nil, err
 }
 
-func MustToRuntimeObjectConditionsInterface(instance RuntimeObject, log *logger.Logger) RuntimeObjectConditions {
-	obj, err := toRuntimeObjectConditionsInterface(instance, log)
+func (c *ConditionManager) MustToRuntimeObjectConditionsInterface(instance runtimeobject.RuntimeObject, log *logger.Logger) RuntimeObjectConditions {
+	obj, err := c.ToRuntimeObjectConditionsInterface(instance, log)
 	if err == nil {
 		return obj
 	}

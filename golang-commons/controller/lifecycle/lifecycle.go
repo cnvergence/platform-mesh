@@ -14,149 +14,128 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/platform-mesh/golang-commons/controller/filter"
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/conditions"
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/runtimeobject"
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/spread"
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/subroutine"
 	"github.com/platform-mesh/golang-commons/errors"
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/platform-mesh/golang-commons/sentry"
 )
 
-type LifecycleManager struct {
-	log                *logger.Logger
-	client             client.Client
-	subroutines        []Subroutine
-	operatorName       string
-	controllerName     string
-	spreadReconciles   bool
-	manageConditions   bool
-	readOnly           bool
-	prepareContextFunc PrepareContextFunc
+type Lifecycle interface {
+	Config() Config
+	Log() *logger.Logger
+	Spreader() *spread.Spreader
+	ConditionsManager() *conditions.ConditionManager
+	PrepareContextFunc() PrepareContextFunc
+	Subroutines() []subroutine.Subroutine
 }
 
-type RuntimeObject interface {
-	runtime.Object
-	v1.Object
+type Config struct {
+	OperatorName   string
+	ControllerName string
+	ReadOnly       bool
 }
 
-type Subroutine interface {
-	Process(ctx context.Context, instance RuntimeObject) (ctrl.Result, errors.OperatorError)
-	Finalize(ctx context.Context, instance RuntimeObject) (ctrl.Result, errors.OperatorError)
-	GetName() string
-	Finalizers() []string
-}
+type PrepareContextFunc func(ctx context.Context, instance runtimeobject.RuntimeObject) (context.Context, errors.OperatorError)
 
-func NewLifecycleManager(log *logger.Logger, operatorName string, controllerName string, client client.Client, subroutines []Subroutine) *LifecycleManager {
-
-	log = log.MustChildLoggerWithAttributes("operator", operatorName, "controller", controllerName)
-	return &LifecycleManager{
-		log:              log,
-		client:           client,
-		subroutines:      subroutines,
-		operatorName:     operatorName,
-		controllerName:   controllerName,
-		spreadReconciles: false,
-	}
-}
-
-func (l *LifecycleManager) Reconcile(ctx context.Context, req ctrl.Request, instance RuntimeObject) (ctrl.Result, error) {
-	ctx, span := otel.Tracer(l.operatorName).Start(ctx, fmt.Sprintf("%s.Reconcile", l.controllerName))
+func Reconcile(ctx context.Context, req ctrl.Request, instance runtimeobject.RuntimeObject, cl client.Client, l Lifecycle) (ctrl.Result, error) {
+	ctx, span := otel.Tracer(l.Config().OperatorName).Start(ctx, fmt.Sprintf("%s.Reconcile", l.Config().ControllerName))
 	defer span.End()
 
 	result := ctrl.Result{}
 	reconcileId := uuid.New().String()
 
-	log := l.log.MustChildLoggerWithAttributes("name", req.Name, "namespace", req.Namespace, "reconcile_id", reconcileId)
+	log := l.Log().MustChildLoggerWithAttributes("name", req.Name, "namespace", req.Namespace, "reconcile_id", reconcileId)
 	sentryTags := sentry.Tags{"namespace": req.Namespace, "name": req.Name}
 
 	ctx = logger.SetLoggerInContext(ctx, log)
 	ctx = sentry.ContextWithSentryTags(ctx, sentryTags)
 
 	log.Info().Msg("start reconcile")
-	generationChanged := true
-	err := l.client.Get(ctx, req.NamespacedName, instance)
+	err := cl.Get(ctx, req.NamespacedName, instance)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			log.Info().Msg("instance not found. It was likely deleted")
 			return ctrl.Result{}, nil
 		}
-		return l.handleClientError("failed to retrieve instance", log, err, generationChanged, sentryTags)
+		return HandleClientError("failed to retrieve instance", log, err, true, sentryTags)
 	}
 
 	originalCopy := instance.DeepCopyObject()
 	inDeletion := instance.GetDeletionTimestamp() != nil
+	generationChanged := true
 
-	if l.spreadReconciles && instance.GetDeletionTimestamp().IsZero() {
-		instanceStatusObj := MustToRuntimeObjectSpreadReconcileStatusInterface(instance, log)
+	if l.Spreader() != nil && instance.GetDeletionTimestamp().IsZero() {
+		instanceStatusObj := l.Spreader().MustToRuntimeObjectSpreadReconcileStatusInterface(instance, log)
 		generationChanged = instance.GetGeneration() != instanceStatusObj.GetObservedGeneration()
 		isAfterNextReconcileTime := v1.Now().UTC().After(instanceStatusObj.GetNextReconcileTime().UTC())
-		refreshRequested := slices.Contains(maps.Keys(instance.GetLabels()), SpreadReconcileRefreshLabel)
+		refreshRequested := slices.Contains(maps.Keys(instance.GetLabels()), spread.ReconcileRefreshLabel)
 
 		reconcileRequired := generationChanged || isAfterNextReconcileTime || refreshRequested
 		if !reconcileRequired {
 			log.Info().Msg("skipping reconciliation, spread reconcile is active. No processing needed")
-			return onNextReconcile(instanceStatusObj, log)
+			return l.Spreader().OnNextReconcile(instanceStatusObj, log)
 		}
 	}
 
 	// Manage Finalizers
-	ferr := l.addFinalizersIfNeeded(ctx, instance)
+	ferr := AddFinalizersIfNeeded(ctx, cl, instance, l.Subroutines(), l.Config().ReadOnly)
 	if ferr != nil {
 		return ctrl.Result{}, ferr
 	}
 
-	var conditions []v1.Condition
-	if l.manageConditions {
-		conditions = MustToRuntimeObjectConditionsInterface(instance, log).GetConditions()
-		setInstanceConditionUnknownIfNotSet(&conditions)
+	var condArr []v1.Condition
+	if l.ConditionsManager() != nil {
+		condArr = l.ConditionsManager().MustToRuntimeObjectConditionsInterface(instance, log).GetConditions()
+		l.ConditionsManager().SetInstanceConditionUnknownIfNotSet(&condArr)
 	}
 
-	if l.prepareContextFunc != nil {
-		localCtx, oErr := l.prepareContextFunc(ctx, instance)
+	if l.PrepareContextFunc() != nil {
+		localCtx, oErr := l.PrepareContextFunc()(ctx, instance)
 		if oErr != nil {
-			return l.handleOperatorError(ctx, oErr, "failed to prepare context", generationChanged)
+			return HandleOperatorError(ctx, oErr, "failed to prepare context", generationChanged, l.Log())
 		}
 		ctx = localCtx
 	}
 
 	// In case of deletion execute the finalize subroutines in the reverse order as subroutine processing
-	subroutines := make([]Subroutine, len(l.subroutines))
-	copy(subroutines, l.subroutines)
+	subroutines := make([]subroutine.Subroutine, len(l.Subroutines()))
+	copy(subroutines, l.Subroutines())
 	if inDeletion {
 		slices.Reverse(subroutines)
 	}
 
 	// Continue with reconciliation
-	for _, subroutine := range subroutines {
-		if l.manageConditions {
-			setSubroutineConditionToUnknownIfNotSet(&conditions, subroutine, inDeletion, log)
+	for _, s := range subroutines {
+		if l.ConditionsManager() != nil {
+			l.ConditionsManager().SetSubroutineConditionToUnknownIfNotSet(&condArr, s, inDeletion, log)
 		}
 
-		// Set current conditions before reconciling the subroutine
-		if l.manageConditions {
-			MustToRuntimeObjectConditionsInterface(instance, log).SetConditions(conditions)
+		// Set current condArr before reconciling the s
+		if l.ConditionsManager() != nil {
+			l.ConditionsManager().MustToRuntimeObjectConditionsInterface(instance, log).SetConditions(condArr)
 		}
-		subResult, retry, err := l.reconcileSubroutine(ctx, instance, subroutine, log, generationChanged, sentryTags)
-		// Update conditions with any changes the subroutine did
-		if l.manageConditions {
-			conditions = MustToRuntimeObjectConditionsInterface(instance, log).GetConditions()
+		subResult, retry, err := reconcileSubroutine(ctx, instance, s, cl, l, log, generationChanged, sentryTags)
+		// Update condArr with any changes the s did
+		if l.ConditionsManager() != nil {
+			condArr = l.ConditionsManager().MustToRuntimeObjectConditionsInterface(instance, log).GetConditions()
 		}
 		if err != nil {
-			if l.manageConditions {
-				setSubroutineCondition(&conditions, subroutine, result, err, inDeletion, log)
-				setInstanceConditionReady(&conditions, v1.ConditionFalse)
-				MustToRuntimeObjectConditionsInterface(instance, log).SetConditions(conditions)
+			if l.ConditionsManager() != nil {
+				l.ConditionsManager().SetSubroutineCondition(&condArr, s, result, err, inDeletion, log)
+				l.ConditionsManager().SetInstanceConditionReady(&condArr, v1.ConditionFalse)
+				l.ConditionsManager().MustToRuntimeObjectConditionsInterface(instance, log).SetConditions(condArr)
 			}
 			if !retry {
-				l.markResourceAsFinal(instance, log, conditions, v1.ConditionFalse)
+				MarkResourceAsFinal(instance, log, condArr, v1.ConditionFalse, l)
 			}
-			if !l.readOnly {
-				_ = updateStatus(ctx, l.client, originalCopy, instance, log, generationChanged, sentryTags)
+			if !l.Config().ReadOnly {
+				_ = updateStatus(ctx, cl, originalCopy, instance, log, generationChanged, sentryTags)
 			}
 			if !retry {
 				return ctrl.Result{}, nil
@@ -168,40 +147,40 @@ func (l *LifecycleManager) Reconcile(ctx context.Context, req ctrl.Request, inst
 				result.RequeueAfter = subResult.RequeueAfter
 			}
 		}
-		if l.manageConditions {
+		if l.ConditionsManager() != nil {
 			if subResult.RequeueAfter == 0 {
-				setSubroutineCondition(&conditions, subroutine, subResult, err, inDeletion, log)
+				l.ConditionsManager().SetSubroutineCondition(&condArr, s, subResult, err, inDeletion, log)
 			}
 		}
 	}
 
 	if result.RequeueAfter == 0 {
 		// Reconciliation was successful
-		l.markResourceAsFinal(instance, log, conditions, v1.ConditionTrue)
+		MarkResourceAsFinal(instance, log, condArr, v1.ConditionTrue, l)
 	} else {
-		if l.manageConditions {
-			setInstanceConditionReady(&conditions, v1.ConditionFalse)
+		if l.ConditionsManager() != nil {
+			l.ConditionsManager().SetInstanceConditionReady(&condArr, v1.ConditionFalse)
 		}
 	}
 
-	if l.manageConditions {
-		MustToRuntimeObjectConditionsInterface(instance, log).SetConditions(conditions)
+	if l.ConditionsManager() != nil {
+		l.ConditionsManager().MustToRuntimeObjectConditionsInterface(instance, log).SetConditions(condArr)
 	}
 
-	if !l.readOnly {
-		err = updateStatus(ctx, l.client, originalCopy, instance, log, generationChanged, sentryTags)
+	if !l.Config().ReadOnly {
+		err = updateStatus(ctx, cl, originalCopy, instance, log, generationChanged, sentryTags)
 		if err != nil {
 			return result, err
 		}
 	}
 
-	if l.spreadReconciles && instance.GetDeletionTimestamp().IsZero() {
+	if l.Spreader() != nil && instance.GetDeletionTimestamp().IsZero() {
 		original := instance.DeepCopyObject().(client.Object)
-		removed := removeRefreshLabelIfExists(instance)
+		removed := l.Spreader().RemoveRefreshLabelIfExists(instance)
 		if removed {
-			updateErr := l.client.Patch(ctx, instance, client.MergeFrom(original))
+			updateErr := cl.Patch(ctx, instance, client.MergeFrom(original))
 			if updateErr != nil {
-				return l.handleClientError("failed to update instance", log, err, generationChanged, sentryTags)
+				return HandleClientError("failed to update instance", log, err, generationChanged, sentryTags)
 			}
 		}
 	}
@@ -210,35 +189,78 @@ func (l *LifecycleManager) Reconcile(ctx context.Context, req ctrl.Request, inst
 	return result, nil
 }
 
-func (l *LifecycleManager) markResourceAsFinal(instance RuntimeObject, log *logger.Logger, conditions []v1.Condition, status v1.ConditionStatus) {
-	if l.spreadReconciles && instance.GetDeletionTimestamp().IsZero() {
-		instanceStatusObj := MustToRuntimeObjectSpreadReconcileStatusInterface(instance, log)
-		setNextReconcileTime(instanceStatusObj, log)
-		updateObservedGeneration(instanceStatusObj, log)
+func reconcileSubroutine(ctx context.Context, instance runtimeobject.RuntimeObject, subroutine subroutine.Subroutine, cl client.Client, l Lifecycle, log *logger.Logger, generationChanged bool, sentryTags map[string]string) (ctrl.Result, bool, error) {
+	subroutineLogger := log.ChildLogger("subroutine", subroutine.GetName())
+	ctx = logger.SetLoggerInContext(ctx, subroutineLogger)
+	subroutineLogger.Debug().Msg("start subroutine")
+
+	ctx, span := otel.Tracer(l.Config().OperatorName).Start(ctx, fmt.Sprintf("%s.reconcileSubroutine.%s", l.Config().ControllerName, subroutine.GetName()))
+	defer span.End()
+	var result ctrl.Result
+	var err errors.OperatorError
+	if instance.GetDeletionTimestamp() != nil {
+		if containsFinalizer(instance, subroutine.Finalizers()) {
+			subroutineLogger.Debug().Msg("finalizing instance")
+			result, err = subroutine.Finalize(ctx, instance)
+			subroutineLogger.Debug().Any("result", result).Msg("finalized instance")
+			if err == nil {
+				// Remove finalizers unless requeue is requested
+				err = removeFinalizerIfNeeded(ctx, instance, subroutine, result, l.Config().ReadOnly, cl)
+			}
+		}
+	} else {
+		subroutineLogger.Debug().Msg("processing instance")
+		result, err = subroutine.Process(ctx, instance)
+		subroutineLogger.Debug().Any("result", result).Msg("processed instance")
 	}
 
-	if l.manageConditions {
-		setInstanceConditionReady(&conditions, status)
+	if err != nil {
+		if generationChanged && err.Sentry() {
+			sentry.CaptureError(err.Err(), sentryTags)
+		}
+		subroutineLogger.Error().Err(err.Err()).Bool("retry", err.Retry()).Msg("subroutine ended with error")
+		return result, err.Retry(), err.Err()
 	}
+
+	subroutineLogger.Debug().Msg("end subroutine")
+	return result, false, nil
 }
 
-func (l *LifecycleManager) validateInterfaces(instance RuntimeObject, log *logger.Logger) error {
-	if l.spreadReconciles {
-		_, err := toRuntimeObjectSpreadReconcileStatusInterface(instance, log)
-		if err != nil {
-			return err
+func containsFinalizer(o client.Object, subroutineFinalizers []string) bool {
+	for _, subroutineFinalizer := range subroutineFinalizers {
+		if controllerutil.ContainsFinalizer(o, subroutineFinalizer) {
+			return true
 		}
 	}
-	if l.manageConditions {
-		_, err := toRuntimeObjectConditionsInterface(instance, log)
-		if err != nil {
-			return err
+	return false
+}
+
+func removeFinalizerIfNeeded(ctx context.Context, instance runtimeobject.RuntimeObject, subroutine subroutine.Subroutine, result ctrl.Result, readonly bool, cl client.Client) errors.OperatorError {
+	if readonly {
+		return nil
+	}
+
+	if result.RequeueAfter == 0 {
+		update := false
+		original := instance.DeepCopyObject().(client.Object)
+		for _, f := range subroutine.Finalizers() {
+			needsUpdate := controllerutil.RemoveFinalizer(instance, f)
+			if needsUpdate {
+				update = true
+			}
+		}
+		if update {
+			err := cl.Patch(ctx, instance, client.MergeFrom(original))
+			if err != nil {
+				return errors.NewOperatorError(errors.Wrap(err, "failed to update instance"), true, false)
+			}
 		}
 	}
+
 	return nil
 }
 
-func updateStatus(ctx context.Context, cl client.Client, original runtime.Object, current RuntimeObject, log *logger.Logger, generationChanged bool, sentryTags sentry.Tags) error {
+func updateStatus(ctx context.Context, cl client.Client, original runtime.Object, current runtimeobject.RuntimeObject, log *logger.Logger, generationChanged bool, sentryTags sentry.Tags) error {
 	currentUn, err := runtime.DefaultUnstructuredConverter.ToUnstructured(current)
 	if err != nil {
 		return err
@@ -286,20 +308,7 @@ func updateStatus(ctx context.Context, cl client.Client, original runtime.Object
 	return nil
 }
 
-func (l *LifecycleManager) handleOperatorError(ctx context.Context, operatorError errors.OperatorError, msg string, generationChanged bool) (ctrl.Result, error) {
-	l.log.Error().Bool("retry", operatorError.Retry()).Bool("sentry", operatorError.Sentry()).Err(operatorError.Err()).Msg(msg)
-	if generationChanged && operatorError.Sentry() {
-		sentry.CaptureError(operatorError.Err(), sentry.GetSentryTagsFromContext(ctx))
-	}
-
-	if operatorError.Retry() {
-		return ctrl.Result{}, operatorError.Err()
-	}
-
-	return ctrl.Result{}, nil
-}
-
-func (l *LifecycleManager) handleClientError(msg string, log *logger.Logger, err error, generationChanged bool, sentryTags sentry.Tags) (ctrl.Result, error) {
+func HandleClientError(msg string, log *logger.Logger, err error, generationChanged bool, sentryTags sentry.Tags) (ctrl.Result, error) {
 	log.Error().Err(err).Msg(msg)
 	if generationChanged {
 		sentry.CaptureError(err, sentryTags)
@@ -308,54 +317,20 @@ func (l *LifecycleManager) handleClientError(msg string, log *logger.Logger, err
 	return ctrl.Result{}, err
 }
 
-func containsFinalizer(o client.Object, subroutineFinalizers []string) bool {
-	for _, subroutineFinalizer := range subroutineFinalizers {
-		if controllerutil.ContainsFinalizer(o, subroutineFinalizer) {
-			return true
-		}
+func MarkResourceAsFinal(instance runtimeobject.RuntimeObject, log *logger.Logger, conditions []v1.Condition, status v1.ConditionStatus, l Lifecycle) {
+	if l.Spreader() != nil && instance.GetDeletionTimestamp().IsZero() {
+		instanceStatusObj := l.Spreader().MustToRuntimeObjectSpreadReconcileStatusInterface(instance, log)
+		l.Spreader().SetNextReconcileTime(instanceStatusObj, log)
+		l.Spreader().UpdateObservedGeneration(instanceStatusObj, log)
 	}
-	return false
+
+	if l.ConditionsManager() != nil {
+		l.ConditionsManager().SetInstanceConditionReady(&conditions, status)
+	}
 }
 
-func (l *LifecycleManager) reconcileSubroutine(ctx context.Context, instance RuntimeObject, subroutine Subroutine, log *logger.Logger, generationChanged bool, sentryTags map[string]string) (ctrl.Result, bool, error) {
-	subroutineLogger := log.ChildLogger("subroutine", subroutine.GetName())
-	ctx = logger.SetLoggerInContext(ctx, subroutineLogger)
-	subroutineLogger.Debug().Msg("start subroutine")
-
-	ctx, span := otel.Tracer(l.operatorName).Start(ctx, fmt.Sprintf("%s.reconcileSubroutine.%s", l.controllerName, subroutine.GetName()))
-	defer span.End()
-	var result ctrl.Result
-	var err errors.OperatorError
-	if instance.GetDeletionTimestamp() != nil {
-		if containsFinalizer(instance, subroutine.Finalizers()) {
-			subroutineLogger.Debug().Msg("finalizing instance")
-			result, err = subroutine.Finalize(ctx, instance)
-			subroutineLogger.Debug().Any("result", result).Msg("finalized instance")
-			if err == nil {
-				// Remove finalizers unless requeue is requested
-				err = l.removeFinalizerIfNeeded(ctx, instance, subroutine, result)
-			}
-		}
-	} else {
-		subroutineLogger.Debug().Msg("processing instance")
-		result, err = subroutine.Process(ctx, instance)
-		subroutineLogger.Debug().Any("result", result).Msg("processed instance")
-	}
-
-	if err != nil {
-		if generationChanged && err.Sentry() {
-			sentry.CaptureError(err.Err(), sentryTags)
-		}
-		subroutineLogger.Error().Err(err.Err()).Bool("retry", err.Retry()).Msg("subroutine ended with error")
-		return result, err.Retry(), err.Err()
-	}
-
-	subroutineLogger.Debug().Msg("end subroutine")
-	return result, false, nil
-}
-
-func (l *LifecycleManager) addFinalizersIfNeeded(ctx context.Context, instance RuntimeObject) error {
-	if l.readOnly {
+func AddFinalizersIfNeeded(ctx context.Context, cl client.Client, instance runtimeobject.RuntimeObject, subroutines []subroutine.Subroutine, readonly bool) error {
+	if readonly {
 		return nil
 	}
 
@@ -365,16 +340,16 @@ func (l *LifecycleManager) addFinalizersIfNeeded(ctx context.Context, instance R
 
 	update := false
 	original := instance.DeepCopyObject().(client.Object)
-	for _, subroutine := range l.subroutines {
-		if len(subroutine.Finalizers()) > 0 {
-			needsUpdate := l.addFinalizerIfNeeded(instance, subroutine)
+	for _, s := range subroutines {
+		if len(s.Finalizers()) > 0 {
+			needsUpdate := AddFinalizerIfNeeded(instance, s)
 			if needsUpdate {
 				update = true
 			}
 		}
 	}
 	if update {
-		err := l.client.Patch(ctx, instance, client.MergeFrom(original))
+		err := cl.Patch(ctx, instance, client.MergeFrom(original))
 		if err != nil {
 			return err
 		}
@@ -382,7 +357,7 @@ func (l *LifecycleManager) addFinalizersIfNeeded(ctx context.Context, instance R
 	return nil
 }
 
-func (l *LifecycleManager) addFinalizerIfNeeded(instance RuntimeObject, subroutine Subroutine) bool {
+func AddFinalizerIfNeeded(instance runtimeobject.RuntimeObject, subroutine subroutine.Subroutine) bool {
 	update := false
 	for _, f := range subroutine.Finalizers() {
 		needsUpdate := controllerutil.AddFinalizer(instance, f)
@@ -393,70 +368,15 @@ func (l *LifecycleManager) addFinalizerIfNeeded(instance RuntimeObject, subrouti
 	return update
 }
 
-func (l *LifecycleManager) removeFinalizerIfNeeded(ctx context.Context, instance RuntimeObject, subroutine Subroutine, result ctrl.Result) errors.OperatorError {
-	if l.readOnly {
-		return nil
+func HandleOperatorError(ctx context.Context, operatorError errors.OperatorError, msg string, generationChanged bool, log *logger.Logger) (ctrl.Result, error) {
+	log.Error().Bool("retry", operatorError.Retry()).Bool("sentry", operatorError.Sentry()).Err(operatorError.Err()).Msg(msg)
+	if generationChanged && operatorError.Sentry() {
+		sentry.CaptureError(operatorError.Err(), sentry.GetSentryTagsFromContext(ctx))
 	}
 
-	if result.RequeueAfter == 0 {
-		update := false
-		original := instance.DeepCopyObject().(client.Object)
-		for _, f := range subroutine.Finalizers() {
-			needsUpdate := controllerutil.RemoveFinalizer(instance, f)
-			if needsUpdate {
-				update = true
-			}
-		}
-		if update {
-			err := l.client.Patch(ctx, instance, client.MergeFrom(original))
-			if err != nil {
-				return errors.NewOperatorError(errors.Wrap(err, "failed to update instance"), true, false)
-			}
-		}
+	if operatorError.Retry() {
+		return ctrl.Result{}, operatorError.Err()
 	}
 
-	return nil
-}
-
-func (l *LifecycleManager) SetupWithManagerBuilder(mgr ctrl.Manager, maxReconciles int, reconcilerName string, instance RuntimeObject, debugLabelValue string, log *logger.Logger, eventPredicates ...predicate.Predicate) (*builder.Builder, error) {
-	if err := l.validateInterfaces(instance, log); err != nil {
-		return nil, err
-	}
-
-	if (l.manageConditions || l.spreadReconciles) && l.readOnly {
-		return nil, fmt.Errorf("cannot use conditions or spread reconciles in read-only mode")
-	}
-
-	eventPredicates = append([]predicate.Predicate{filter.DebugResourcesBehaviourPredicate(debugLabelValue)}, eventPredicates...)
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(reconcilerName).
-		For(instance).
-		WithOptions(controller.Options{MaxConcurrentReconciles: maxReconciles}).
-		WithEventFilter(predicate.And(eventPredicates...)), nil
-}
-
-func (l *LifecycleManager) SetupWithManager(mgr ctrl.Manager, maxReconciles int, reconcilerName string, instance RuntimeObject, debugLabelValue string, r reconcile.Reconciler, log *logger.Logger, eventPredicates ...predicate.Predicate) error {
-	bldr, err := l.SetupWithManagerBuilder(mgr, maxReconciles, reconcilerName, instance, debugLabelValue, log, eventPredicates...)
-	if err != nil {
-		return err
-	}
-
-	return bldr.Complete(r)
-}
-
-type PrepareContextFunc func(ctx context.Context, instance RuntimeObject) (context.Context, errors.OperatorError)
-
-// WithPrepareContextFunc allows to set a function that prepares the context before each reconciliation
-// This can be used to add additional information to the context that is needed by the subroutines
-// You need to return a new context and an OperatorError in case of an error
-func (l *LifecycleManager) WithPrepareContextFunc(prepareFunction PrepareContextFunc) *LifecycleManager {
-	l.prepareContextFunc = prepareFunction
-	return l
-}
-
-// WithReadOnly allows to set the controller to read-only mode
-// In read-only mode, the controller will not update the status of the instance
-func (l *LifecycleManager) WithReadOnly() *LifecycleManager {
-	l.readOnly = true
-	return l
+	return ctrl.Result{}, nil
 }

@@ -19,14 +19,24 @@ type FGAStoreHelper interface {
 }
 
 type FgaTenantStore struct {
-	cache *expirable.LRU[string, string]
+	cache       *expirable.LRU[string, string]
+	storePrefix string
 }
 
 var _ FGAStoreHelper = (*FgaTenantStore)(nil)
 
+// Deprecated: Use NewWithPrefix instead.
 func New() *FgaTenantStore {
 	return &FgaTenantStore{
-		cache: expirable.NewLRU[string, string](10, nil, 10*time.Minute),
+		cache:       expirable.NewLRU[string, string](10, nil, 10*time.Minute),
+		storePrefix: "tenant-",
+	}
+}
+
+func NewWithPrefix(prefix string) *FgaTenantStore {
+	return &FgaTenantStore{
+		cache:       expirable.NewLRU[string, string](10, nil, 10*time.Minute),
+		storePrefix: prefix,
 	}
 }
 
@@ -43,9 +53,10 @@ func (c *FgaTenantStore) GetStoreIDForTenant(ctx context.Context, conn openfgav1
 		return "", err
 	}
 
-	idx := slices.IndexFunc(res.GetStores(), func(s *openfgav1.Store) bool { return s.Name == cacheKey })
+	storeName := c.storePrefix + tenantID
+	idx := slices.IndexFunc(res.GetStores(), func(s *openfgav1.Store) bool { return s.Name == storeName })
 	if idx < 0 {
-		return "", fmt.Errorf("could not find store matching key %q", cacheKey)
+		return "", fmt.Errorf("could not find store matching key %q", storeName)
 	}
 
 	store := res.GetStores()[idx]

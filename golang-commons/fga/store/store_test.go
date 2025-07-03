@@ -121,7 +121,7 @@ func TestGetModelIDForTenant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &mocks.OpenFGAServiceClient{}
-			cachedStore := fgastore.New()
+			cachedStore := fgastore.NewWithPrefix("tenant-")
 			tt.setupMock(client, cachedStore)
 
 			modelID, err := cachedStore.GetModelIDForTenant(ctx, client, tenantID)
@@ -159,9 +159,7 @@ func TestIsDuplicateWriteError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
-			cachedStore := fgastore.New()
-
+			cachedStore := fgastore.NewWithPrefix("tenant-")
 			result := cachedStore.IsDuplicateWriteError(tt.err)
 			assert.Equal(t, tt.expected, result)
 		})

@@ -1,4 +1,4 @@
-package lifecycle
+package spread
 
 import (
 	"testing"
@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	pmtesting "github.com/platform-mesh/golang-commons/controller/lifecycle/testing"
 	"github.com/platform-mesh/golang-commons/controller/testSupport"
 	"github.com/platform-mesh/golang-commons/logger/testlogger"
 )
@@ -36,10 +37,11 @@ func TestOnNextReconcile(t *testing.T) {
 	instanceStatusObj := testSupport.TestStatus{
 		NextReconcileTime: v1.NewTime(nextReconcile),
 	}
-	apiObject := &implementingSpreadReconciles{testSupport.TestApiObject{Status: instanceStatusObj}}
+	s := NewSpreader()
+	apiObject := &pmtesting.ImplementingSpreadReconciles{TestApiObject: testSupport.TestApiObject{Status: instanceStatusObj}}
 	tl := testlogger.New()
 
-	requeueAfter, err := onNextReconcile(apiObject, tl.Logger)
+	requeueAfter, err := s.OnNextReconcile(apiObject, tl.Logger)
 	if err != nil {
 		t.Errorf("Expected no error, but got %v", err)
 	}
@@ -55,7 +57,7 @@ func TestOnNextReconcile(t *testing.T) {
 
 type testInstance struct {
 	mock.Mock
-	*implementingSpreadReconciles
+	*pmtesting.ImplementingSpreadReconciles
 }
 
 func (t *testInstance) GenerateNextReconcileTime() time.Duration {
@@ -65,21 +67,22 @@ func (t *testInstance) GenerateNextReconcileTime() time.Duration {
 
 func TestGenerateNextReconcileTimer(t *testing.T) {
 	instance := &testInstance{
-		implementingSpreadReconciles: &implementingSpreadReconciles{testSupport.TestApiObject{}},
+		ImplementingSpreadReconciles: &pmtesting.ImplementingSpreadReconciles{},
 	}
-
+	s := NewSpreader()
 	instance.On("GenerateNextReconcileTime").Return(10 * time.Minute)
 
-	setNextReconcileTime(instance, testlogger.New().Logger)
+	s.SetNextReconcileTime(instance, testlogger.New().Logger)
 
 	assert.True(t, instance.AssertCalled(t, "GenerateNextReconcileTime"))
 }
 
 func TestUpdateObservedGeneration(t *testing.T) {
+	s := NewSpreader()
 	instanceStatusObj := testSupport.TestStatus{
 		ObservedGeneration: 0,
 	}
-	apiObject := &implementingSpreadReconciles{testSupport.TestApiObject{
+	apiObject := &pmtesting.ImplementingSpreadReconciles{TestApiObject: testSupport.TestApiObject{
 		Status: instanceStatusObj,
 		ObjectMeta: v1.ObjectMeta{
 			Generation: 1,
@@ -87,7 +90,7 @@ func TestUpdateObservedGeneration(t *testing.T) {
 	},
 	}
 	tl := testlogger.New()
-	updateObservedGeneration(apiObject, tl.Logger)
+	s.UpdateObservedGeneration(apiObject, tl.Logger)
 
 	assert.Equal(t, apiObject.GetObservedGeneration(), apiObject.GetGeneration())
 	messages, err := tl.GetLogMessages()
@@ -96,37 +99,40 @@ func TestUpdateObservedGeneration(t *testing.T) {
 }
 
 func TestRemoveRefreshLabel(t *testing.T) {
+	s := NewSpreader()
 	apiObject := &testSupport.TestApiObject{
 		ObjectMeta: v1.ObjectMeta{
-			Labels: map[string]string{SpreadReconcileRefreshLabel: ""},
+			Labels: map[string]string{ReconcileRefreshLabel: ""},
 		},
 	}
-	removeRefreshLabelIfExists(apiObject)
+	s.RemoveRefreshLabelIfExists(apiObject)
 
-	_, ok := apiObject.GetLabels()[SpreadReconcileRefreshLabel]
+	_, ok := apiObject.GetLabels()[ReconcileRefreshLabel]
 	assert.False(t, ok)
 }
 
 func TestRemoveRefreshLabelFilledWithValue(t *testing.T) {
+	s := NewSpreader()
 	apiObject := &testSupport.TestApiObject{
 		ObjectMeta: v1.ObjectMeta{
-			Labels: map[string]string{SpreadReconcileRefreshLabel: "true"},
+			Labels: map[string]string{ReconcileRefreshLabel: "true"},
 		},
 	}
-	removeRefreshLabelIfExists(apiObject)
+	s.RemoveRefreshLabelIfExists(apiObject)
 
-	_, ok := apiObject.GetLabels()[SpreadReconcileRefreshLabel]
+	_, ok := apiObject.GetLabels()[ReconcileRefreshLabel]
 
 	assert.False(t, ok)
 }
 
 func TestRemoveRefreshLabelNoLabels(t *testing.T) {
+	s := NewSpreader()
 	apiObject := &testSupport.TestApiObject{
 		ObjectMeta: v1.ObjectMeta{},
 	}
-	removeRefreshLabelIfExists(apiObject)
+	s.RemoveRefreshLabelIfExists(apiObject)
 
-	_, ok := apiObject.GetLabels()[SpreadReconcileRefreshLabel]
+	_, ok := apiObject.GetLabels()[ReconcileRefreshLabel]
 
 	assert.False(t, ok)
 }
