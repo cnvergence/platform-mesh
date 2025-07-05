@@ -11,7 +11,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/mocks"
-	"github.com/platform-mesh/golang-commons/controller/testSupport"
 	pmtesting "github.com/platform-mesh/golang-commons/controller/testSupport"
 	"github.com/platform-mesh/golang-commons/logger"
 )
@@ -29,7 +28,7 @@ func TestLifecycle(t *testing.T) {
 	logcfg.NoJSON = true
 	log, err := logger.New(logcfg)
 	assert.NoError(t, err)
-	//testApiObject := &testSupport.TestApiObject{
+	//testApiObject := &pmtesting.TestApiObject{
 	//	ObjectMeta: metav1.ObjectMeta{
 	//		Name:      name,
 	//		Namespace: namespace,
@@ -39,12 +38,12 @@ func TestLifecycle(t *testing.T) {
 
 	t.Run("Lifecycle with a not found object", func(t *testing.T) {
 		// Arrange
-		fakeClient := testSupport.CreateFakeClient(t, &testSupport.TestApiObject{})
+		fakeClient := pmtesting.CreateFakeClient(t, &pmtesting.TestApiObject{})
 
 		mgr := pmtesting.TestLifecycleManager{Logger: log}
 
 		// Act
-		result, err := Reconcile(ctx, request, &testSupport.TestApiObject{}, fakeClient, mgr)
+		result, err := Reconcile(ctx, request, &pmtesting.TestApiObject{}, fakeClient, mgr)
 
 		// Assert
 		assert.NoError(t, err)
@@ -65,8 +64,8 @@ func TestUpdateStatus(t *testing.T) {
 
 	t.Run("Test UpdateStatus with no changes", func(t *testing.T) {
 		original := &pmtesting.ImplementingSpreadReconciles{
-			TestApiObject: testSupport.TestApiObject{
-				Status: testSupport.TestStatus{
+			TestApiObject: pmtesting.TestApiObject{
+				Status: pmtesting.TestStatus{
 					Some: "string",
 				},
 			}}
@@ -80,14 +79,14 @@ func TestUpdateStatus(t *testing.T) {
 
 	t.Run("Test UpdateStatus with update error", func(t *testing.T) {
 		original := &pmtesting.ImplementingSpreadReconciles{
-			TestApiObject: testSupport.TestApiObject{
-				Status: testSupport.TestStatus{
+			TestApiObject: pmtesting.TestApiObject{
+				Status: pmtesting.TestStatus{
 					Some: "string",
 				},
 			}}
 		current := &pmtesting.ImplementingSpreadReconciles{
-			TestApiObject: testSupport.TestApiObject{
-				Status: testSupport.TestStatus{
+			TestApiObject: pmtesting.TestApiObject{
+				Status: pmtesting.TestStatus{
 					Some: "string1",
 				},
 			}}
@@ -105,7 +104,7 @@ func TestUpdateStatus(t *testing.T) {
 	})
 
 	t.Run("Test UpdateStatus with no status object (original)", func(t *testing.T) {
-		original := &testSupport.TestNoStatusApiObject{}
+		original := &pmtesting.TestNoStatusApiObject{}
 		current := &pmtesting.ImplementConditions{}
 		// When
 		err := updateStatus(context.Background(), clientMock, original, current, log, true, nil)
@@ -116,7 +115,7 @@ func TestUpdateStatus(t *testing.T) {
 	})
 	t.Run("Test UpdateStatus with no status object (current)", func(t *testing.T) {
 		original := &pmtesting.ImplementConditions{}
-		current := &testSupport.TestNoStatusApiObject{}
+		current := &pmtesting.TestNoStatusApiObject{}
 		// When
 		err := updateStatus(context.Background(), clientMock, original, current, log, true, nil)
 
