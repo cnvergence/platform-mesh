@@ -1,9 +1,9 @@
 version = 1
 SPDX-PackageName = "extension-manager-operator"
-SPDX-PackageDownloadLocation = "https://github.com/openmfp/extension-manager-operator"
+SPDX-PackageDownloadLocation = "https://github.com/platform-mesh/extension-manager-operator"
 
 [[annotations]]
 path = "**"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2025 SAP SE or an SAP affiliate company and openMFP contributors and portal contributors."
+SPDX-FileCopyrightText = "2025 SAP SE or an SAP affiliate company and platform-mesh contributors."
 SPDX-License-Identifier = "Apache-2.0"

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/openmfp/extension-manager-operator/cmd"
+	"github.com/platform-mesh/extension-manager-operator/cmd"
 )
 
 func main() {

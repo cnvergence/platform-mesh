@@ -1,8 +1,8 @@
 package transformer
 
 import (
-	"github.com/openmfp/extension-manager-operator/api/v1alpha1"
-	"github.com/openmfp/extension-manager-operator/pkg/validation"
+	"github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
 )
 
 type ContentConfigurationTransformer interface {

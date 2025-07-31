@@ -28,9 +28,9 @@ import (
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/openmfp/extension-manager-operator/api/v1alpha1"
-	commonTesting "github.com/openmfp/extension-manager-operator/pkg/util/testing"
-	"github.com/openmfp/extension-manager-operator/pkg/validation/validation_test"
+	"github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
+	commonTesting "github.com/platform-mesh/extension-manager-operator/pkg/util/testing"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation/validation_test"
 )
 
 func TestContentConfigurationCRTestSuite(t *testing.T) {

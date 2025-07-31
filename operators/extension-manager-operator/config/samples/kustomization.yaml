@@ -1,5 +1,5 @@
 ## Append samples of your project ##
 resources:
-- v1alpha1_contentconfiguration.yaml
-- core_v1alpha1_providermetadata.yaml
+- ui_v1alpha1_contentconfiguration.yaml
+- ui_v1alpha1_providermetadata.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

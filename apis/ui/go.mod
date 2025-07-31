@@ -1,4 +1,4 @@
-module github.com/openmfp/extension-manager-operator/api
+module github.com/platform-mesh/extension-manager-operator/api
 
 go 1.24.4
 

@@ -20,7 +20,7 @@ docker build . --no-cache --tag local-extension-manager-operator:$IMG_TAG
 kind load docker-image local-extension-manager-operator:$IMG_TAG
 
 # apply CRDS
-kubectl apply -f chart/crds/core.openmfp.io_contentconfigurations.yaml
+kubectl apply -f chart/crds/ui.platform-mesh.io_contentconfigurations.yaml
 
 # change in imagePullPolicy in chart/templates/deployment.yaml
 imagePullPolicy: IfNotPresent
@@ -29,12 +29,12 @@ imagePullPolicy: IfNotPresent
 helm template -f ./chart/test-values.yaml extension-manager-operator --include-crds ./chart/ | kubectl apply -f -
 
 # create sample resources
-kubectl apply -f config/samples/v1alpha1_contentconfiguration.yaml
+kubectl apply -f config/samples/ui_v1alpha1_contentconfiguration.yaml
 
 # cleanup
-kubectl delete -f config/samples/v1alpha1_contentconfiguration.yaml
+kubectl delete -f config/samples/ui_v1alpha1_contentconfiguration.yaml
 helm template -f ./chart/test-values.yaml extension-manager-operator ./chart/ --include-crds | kubectl delete -f -
-kubectl delete -f chart/crds/core.openmfp.io_contentconfigurations.yaml
+kubectl delete -f chart/crds/ui.platform-mesh.io_contentconfigurations.yaml
 docker image rm local-extension-manager-operator:test
 kind delete cluster
 ```

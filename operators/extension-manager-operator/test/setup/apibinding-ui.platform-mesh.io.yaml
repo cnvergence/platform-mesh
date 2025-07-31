@@ -1,9 +1,9 @@
 apiVersion: apis.kcp.io/v1alpha1
 kind: APIBinding
 metadata:
-  name: core.openmfp.io
+  name: ui.platform-mesh.io
 spec:
   reference:
     export:
-      name: core.openmfp.io
+      name: ui.platform-mesh.io
       path: root:provider

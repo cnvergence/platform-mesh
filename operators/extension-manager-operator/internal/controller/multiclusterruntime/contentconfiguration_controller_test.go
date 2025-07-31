@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/kcp-dev/multicluster-provider/apiexport"
-	openmfpconfig "github.com/platform-mesh/golang-commons/config"
+	platformmeshconfig "github.com/platform-mesh/golang-commons/config"
 	"github.com/platform-mesh/golang-commons/logger"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -34,8 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/openmfp/extension-manager-operator/api/v1alpha1"
-	"github.com/openmfp/extension-manager-operator/internal/config"
+	"github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
+	"github.com/platform-mesh/extension-manager-operator/internal/config"
 )
 
 const (
@@ -91,18 +91,18 @@ func (suite *ContentConfigurationTestSuite) SetupSuite() {
 	suite.consumerWS, suite.consumer = envtest.NewWorkspaceFixture(suite.T(), suite.cli, core.RootCluster.Path(), envtest.WithNamePrefix("consumer"))
 
 	// Prepare apiexports and resource schema
-	suite.loadFromFile("../../../test/setup/apiresourceschema-providermetadatas.core.openmfp.io.yaml", suite.provider)
-	suite.loadFromFile("../../../test/setup/apiresourceschema-contentconfigurations.core.openmfp.io.yaml", suite.provider)
-	suite.loadFromFile("../../../test/setup/apiexport-core.openmfp.io.yaml", suite.provider)
+	suite.loadFromFile("../../../test/setup/apiresourceschema-providermetadatas.ui.platform-mesh.io.yaml", suite.provider)
+	suite.loadFromFile("../../../test/setup/apiresourceschema-contentconfigurations.ui.platform-mesh.io.yaml", suite.provider)
+	suite.loadFromFile("../../../test/setup/apiexport-ui.platform-mesh.io.yaml", suite.provider)
 
 	// Create apiexportendpointslice
 	aes := &apisv1alpha1.APIExportEndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "core.openmfp.io",
+			Name: "ui.platform-mesh.io",
 		},
 		Spec: apisv1alpha1.APIExportEndpointSliceSpec{
 			APIExport: apisv1alpha1.ExportBindingReference{
-				Name: "core.openmfp.io",
+				Name: "ui.platform-mesh.io",
 				Path: suite.provider.String(),
 			},
 		},
@@ -111,42 +111,42 @@ func (suite *ContentConfigurationTestSuite) SetupSuite() {
 
 	ab := &apisv1alpha1.APIBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "core.openmfp.io",
+			Name: "ui.platform-mesh.io",
 		},
 		Spec: apisv1alpha1.APIBindingSpec{
 			Reference: apisv1alpha1.BindingReference{
 				Export: &apisv1alpha1.ExportBindingReference{
-					Name: "core.openmfp.io",
+					Name: "ui.platform-mesh.io",
 					Path: suite.provider.String(),
 				},
 			},
 		},
 	}
 	err = suite.cli.Cluster(suite.consumer).Create(suite.ctx, ab)
-	suite.Require().NoError(err, "failed to create APIBinding for core.openmfp.io in consumer workspace")
+	suite.Require().NoError(err, "failed to create APIBinding for ui.platform-mesh.io in consumer workspace")
 
 	suite.Eventually(func() bool {
-		getErr := suite.cli.Cluster(suite.consumer).Get(suite.ctx, types.NamespacedName{Name: "core.openmfp.io"}, ab)
+		getErr := suite.cli.Cluster(suite.consumer).Get(suite.ctx, types.NamespacedName{Name: "ui.platform-mesh.io"}, ab)
 		return getErr == nil && ab.Status.Phase == apisv1alpha1.APIBindingPhaseBound
-	}, 10*time.Second, 100*time.Millisecond, "APIBinding for core.openmfp.io in consumer workspace did not become ready")
+	}, 10*time.Second, 100*time.Millisecond, "APIBinding for ui.platform-mesh.io in consumer workspace did not become ready")
 
 	// lookup api export
-	err = suite.cli.Cluster(suite.provider).Get(suite.ctx, types.NamespacedName{Name: "core.openmfp.io"}, aes)
-	suite.Require().NoError(err, "failed to get APIExport for core.openmfp.io in consumer workspace")
+	err = suite.cli.Cluster(suite.provider).Get(suite.ctx, types.NamespacedName{Name: "ui.platform-mesh.io"}, aes)
+	suite.Require().NoError(err, "failed to get APIExport for ui.platform-mesh.io in consumer workspace")
 
 	cfg := rest.CopyConfig(kcpConfig)
 	cfg.Host = aes.Status.APIExportEndpoints[0].URL
 	provider, err := apiexport.New(cfg, apiexport.Options{})
-	suite.Require().NoError(err, "failed to create APIExport client for core.openmfp.io in consumer workspace")
+	suite.Require().NoError(err, "failed to create APIExport client for ui.platform-mesh.io in consumer workspace")
 
 	mgr, err := mcmanager.New(cfg, provider, mcmanager.Options{Logger: log.Logr()})
-	suite.Require().NoError(err, "failed to create APIExport client for core.openmfp.io in consumer workspace")
+	suite.Require().NoError(err, "failed to create APIExport client for ui.platform-mesh.io in consumer workspace")
 
 	operatorCfg := config.OperatorConfig{}
 	operatorCfg.Subroutines.ContentConfiguration.Enabled = true
 	rec := NewContentConfigurationReconciler(log, mgr, operatorCfg)
 
-	err = rec.SetupWithManager(mgr, &openmfpconfig.CommonServiceConfig{}, log)
+	err = rec.SetupWithManager(mgr, &platformmeshconfig.CommonServiceConfig{}, log)
 	suite.Require().NoError(err, "failed to setup ContentConfiguration reconciler with manager")
 
 	var groupContext context.Context

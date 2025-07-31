@@ -20,7 +20,7 @@ import (
 	"context"
 	"net/http"
 
-	openmfpconfig "github.com/platform-mesh/golang-commons/config"
+	platformmeshconfig "github.com/platform-mesh/golang-commons/config"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/builder"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/controllerruntime"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/subroutine"
@@ -28,11 +28,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/openmfp/extension-manager-operator/api/v1alpha1"
-	"github.com/openmfp/extension-manager-operator/internal/config"
-	"github.com/openmfp/extension-manager-operator/internal/controller"
-	"github.com/openmfp/extension-manager-operator/pkg/subroutines"
-	"github.com/openmfp/extension-manager-operator/pkg/validation"
+	"github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
+	"github.com/platform-mesh/extension-manager-operator/internal/config"
+	"github.com/platform-mesh/extension-manager-operator/internal/controller"
+	"github.com/platform-mesh/extension-manager-operator/pkg/subroutines"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
 )
 
 var contentConfigurationReconcilerName = "ContentConfigurationReconcilerCR"
@@ -58,6 +58,6 @@ func (r *ContentConfigurationReconcilerCR) Reconcile(ctx context.Context, req ct
 	return r.lifecycle.Reconcile(ctx, req, &v1alpha1.ContentConfiguration{})
 }
 
-func (r *ContentConfigurationReconcilerCR) SetupWithManager(mgr ctrl.Manager, cfg *openmfpconfig.CommonServiceConfig, log *logger.Logger, eventPredicates ...predicate.Predicate) error {
+func (r *ContentConfigurationReconcilerCR) SetupWithManager(mgr ctrl.Manager, cfg *platformmeshconfig.CommonServiceConfig, log *logger.Logger, eventPredicates ...predicate.Predicate) error {
 	return r.lifecycle.SetupWithManager(mgr, cfg.MaxConcurrentReconciles, contentConfigurationReconcilerName, &v1alpha1.ContentConfiguration{}, cfg.DebugLabelValue, r, log, eventPredicates...)
 }

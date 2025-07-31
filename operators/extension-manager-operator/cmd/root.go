@@ -14,11 +14,11 @@ import (
 	kcpcorev1alpha1 "github.com/kcp-dev/kcp/sdk/apis/core/v1alpha1"
 	kcptenancyv1alpha1 "github.com/kcp-dev/kcp/sdk/apis/tenancy/v1alpha1"
 
-	openmfpconfig "github.com/platform-mesh/golang-commons/config"
+	platformmeshconfig "github.com/platform-mesh/golang-commons/config"
 	"github.com/platform-mesh/golang-commons/logger"
 
-	corev1alpha1 "github.com/openmfp/extension-manager-operator/api/v1alpha1"
-	"github.com/openmfp/extension-manager-operator/internal/config"
+	corev1alpha1 "github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
+	"github.com/platform-mesh/extension-manager-operator/internal/config"
 )
 
 var (
@@ -27,7 +27,7 @@ var (
 
 	operatorCfg config.OperatorConfig
 	serverCfg   config.ServerConfig
-	defaultCfg  *openmfpconfig.CommonServiceConfig
+	defaultCfg  *platformmeshconfig.CommonServiceConfig
 	v           *viper.Viper
 	log         *logger.Logger
 )
@@ -52,18 +52,18 @@ func init() { // coverage-ignore
 	cobra.OnInitialize(initConfig, initLog)
 
 	var err error
-	v, defaultCfg, err = openmfpconfig.NewDefaultConfig(rootCmd)
+	v, defaultCfg, err = platformmeshconfig.NewDefaultConfig(rootCmd)
 	if err != nil {
 		setupLog.Error(err, "Failed to create config")
 		os.Exit(1)
 	}
 
-	err = openmfpconfig.BindConfigToFlags(v, operatorCmd, &operatorCfg)
+	err = platformmeshconfig.BindConfigToFlags(v, operatorCmd, &operatorCfg)
 	if err != nil {
 		setupLog.Error(err, "Failed to bind config to flags")
 		os.Exit(1)
 	}
-	err = openmfpconfig.BindConfigToFlags(v, serverCmd, &serverCfg)
+	err = platformmeshconfig.BindConfigToFlags(v, serverCmd, &serverCfg)
 	if err != nil {
 		setupLog.Error(err, "Failed to bind config to flags")
 		os.Exit(1)

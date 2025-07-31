@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/suite"
 	apimachinery "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	cachev1alpha1 "github.com/openmfp/extension-manager-operator/api/v1alpha1"
-	"github.com/openmfp/extension-manager-operator/pkg/subroutines/mocks"
-	commonTesting "github.com/openmfp/extension-manager-operator/pkg/util/testing"
-	"github.com/openmfp/extension-manager-operator/pkg/validation"
-	"github.com/openmfp/extension-manager-operator/pkg/validation/validation_test"
+	cachev1alpha1 "github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
+	"github.com/platform-mesh/extension-manager-operator/pkg/subroutines/mocks"
+	commonTesting "github.com/platform-mesh/extension-manager-operator/pkg/util/testing"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation/validation_test"
 )
 
 type ContentConfigurationSubroutineTestSuite struct {

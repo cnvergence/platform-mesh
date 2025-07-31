@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/openmfp/extension-manager-operator/pkg/validation"
-	"github.com/openmfp/extension-manager-operator/pkg/validation/mocks"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation/mocks"
 )
 
 type responseError struct {

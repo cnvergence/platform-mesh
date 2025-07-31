@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains API Schema definitions for the core v1alpha1 API group
+// Package v1alpha1 contains API Schema definitions for the ui v1alpha1 API group
 // +kubebuilder:object:generate=true
-// +groupName=core.openmfp.io
+// +groupName=ui.platform-mesh.io
 package v1alpha1
 
 import (
@@ -26,7 +26,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects
-	GroupVersion = schema.GroupVersion{Group: "core.openmfp.io", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "ui.platform-mesh.io", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
 	SchemeBuilder = &runtime.SchemeBuilder{}

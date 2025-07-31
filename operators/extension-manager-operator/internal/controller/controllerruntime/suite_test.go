@@ -34,12 +34,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	openmfpconfig "github.com/platform-mesh/golang-commons/config"
-	openmfpcontext "github.com/platform-mesh/golang-commons/context"
+	platformmeshconfig "github.com/platform-mesh/golang-commons/config"
+	platformmeshcontext "github.com/platform-mesh/golang-commons/context"
 	"github.com/platform-mesh/golang-commons/logger"
 
-	"github.com/openmfp/extension-manager-operator/api/v1alpha1"
-	"github.com/openmfp/extension-manager-operator/internal/config"
+	"github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
+	"github.com/platform-mesh/extension-manager-operator/internal/config"
 )
 
 const (
@@ -69,7 +69,7 @@ func (suite *ContentConfigurationControllerTestSuite) SetupSuite() {
 	// Disable color logging as vs-code does not support color logging in the test output
 	log = logger.NewFromZerolog(log.Output(&zerolog.ConsoleWriter{Out: os.Stdout, NoColor: true}))
 
-	testContext, _, _ := openmfpcontext.StartContext(log, nil, 1*time.Second)
+	testContext, _, _ := platformmeshcontext.StartContext(log, nil, 1*time.Second)
 
 	testContext = logger.SetLoggerInContext(testContext, log.ComponentLogger("TestSuite"))
 
@@ -98,7 +98,7 @@ func (suite *ContentConfigurationControllerTestSuite) SetupSuite() {
 	})
 	suite.Nil(err)
 
-	defaultConfig := &openmfpconfig.CommonServiceConfig{}
+	defaultConfig := &platformmeshconfig.CommonServiceConfig{}
 	appCfg := config.OperatorConfig{}
 	appCfg.Subroutines.ContentConfiguration.Enabled = true
 

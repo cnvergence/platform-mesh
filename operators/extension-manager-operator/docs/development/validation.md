@@ -3,7 +3,7 @@
 To install the validation library, add the following import statement in your Go project:
 
 ```go
-import "github.com/openmfp/extension-manager-operator/pkg/validation"
+import "github.com/platform-mesh/extension-manager-operator/pkg/validation"
 ```
 
 Example usage:
@@ -13,7 +13,7 @@ package main
 
 import (
     "fmt"
-    "github.com/openmfp/extension-manager-operator/pkg/validation"
+    "github.com/platform-mesh/extension-manager-operator/pkg/validation"
 )
 
 func main() {

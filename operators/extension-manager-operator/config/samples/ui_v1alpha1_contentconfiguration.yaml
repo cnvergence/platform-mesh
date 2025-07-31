@@ -1,4 +1,4 @@
-apiVersion: core.openmfp.io/v1alpha1
+apiVersion: ui.platform-mesh.io/v1alpha1
 kind: ContentConfiguration
 metadata:
   labels:
@@ -31,5 +31,5 @@ spec:
              icon: mysegment
              url: https://fiddle.luigi-project.io/examples/microfrontends/multipurpose.html
              context:
-               title: Welcome to OpenMFP Portal
+               title: Welcome to Platform Mesh Portal
                content: " "

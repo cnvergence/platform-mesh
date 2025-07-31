@@ -22,7 +22,7 @@ import (
 	"net/http"
 
 	"github.com/kcp-dev/multicluster-provider/apiexport"
-	openmfpcontext "github.com/platform-mesh/golang-commons/context"
+	platformmeshcontext "github.com/platform-mesh/golang-commons/context"
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/platform-mesh/golang-commons/traces"
 	"github.com/spf13/cobra"
@@ -36,9 +36,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 
-	"github.com/openmfp/extension-manager-operator/internal/config"
-	"github.com/openmfp/extension-manager-operator/internal/controller/controllerruntime"
-	"github.com/openmfp/extension-manager-operator/internal/controller/multiclusterruntime"
+	"github.com/platform-mesh/extension-manager-operator/internal/config"
+	"github.com/platform-mesh/extension-manager-operator/internal/controller/controllerruntime"
+	"github.com/platform-mesh/extension-manager-operator/internal/controller/multiclusterruntime"
 )
 
 var operatorCmd = &cobra.Command{
@@ -51,7 +51,7 @@ func RunController(_ *cobra.Command, _ []string) { // coverage-ignore
 	log.Info().Msg("Starting operator")
 	ctrl.SetLogger(log.ComponentLogger("controller-runtime").Logr())
 
-	ctx, _, shutdown := openmfpcontext.StartContext(log, operatorCfg, defaultCfg.ShutdownTimeout)
+	ctx, _, shutdown := platformmeshcontext.StartContext(log, operatorCfg, defaultCfg.ShutdownTimeout)
 	defer shutdown()
 
 	var err error
@@ -118,7 +118,7 @@ func initializeMultiClusterManager(ctx context.Context, cfg *rest.Config, log *l
 		BaseContext:                   func() context.Context { return ctx },
 		HealthProbeBindAddress:        defaultCfg.HealthProbeBindAddress,
 		LeaderElection:                defaultCfg.LeaderElection.Enabled,
-		LeaderElectionID:              "eengiex3.openmfp.org",
+		LeaderElectionID:              "eengiex3.platform-mesh.io",
 		LeaderElectionReleaseOnCancel: true,
 		LeaderElectionConfig:          cfg,
 	})
@@ -165,7 +165,7 @@ func initializeControllerRuntimeManager(ctx context.Context, restCfg *rest.Confi
 		BaseContext:                   func() context.Context { return ctx },
 		HealthProbeBindAddress:        defaultCfg.HealthProbeBindAddress,
 		LeaderElection:                defaultCfg.LeaderElection.Enabled,
-		LeaderElectionID:              "eengiex4.openmfp.org",
+		LeaderElectionID:              "eengiex4.platform-mesh.io",
 		LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {

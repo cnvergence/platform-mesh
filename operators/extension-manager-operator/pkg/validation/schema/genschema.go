@@ -9,7 +9,7 @@ import (
 
 	"github.com/invopop/jsonschema"
 
-	"github.com/openmfp/extension-manager-operator/pkg/validation"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
 )
 
 func reflectContentConfiguration() {

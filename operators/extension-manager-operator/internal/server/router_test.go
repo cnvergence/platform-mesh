@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/openmfp/extension-manager-operator/internal/config"
-	"github.com/openmfp/extension-manager-operator/pkg/validation"
+	"github.com/platform-mesh/extension-manager-operator/internal/config"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
 	"github.com/platform-mesh/golang-commons/logger"
 )
 

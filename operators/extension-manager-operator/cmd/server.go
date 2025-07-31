@@ -22,15 +22,15 @@ import (
 	"net/http"
 	"time"
 
-	openmfpcontext "github.com/platform-mesh/golang-commons/context"
+	platformmeshcontext "github.com/platform-mesh/golang-commons/context"
 	"github.com/platform-mesh/golang-commons/traces"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/openmfp/extension-manager-operator/internal/server"
-	"github.com/openmfp/extension-manager-operator/pkg/validation"
+	"github.com/platform-mesh/extension-manager-operator/internal/server"
+	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
 )
 
 var serverCmd = &cobra.Command{
@@ -42,7 +42,7 @@ var serverCmd = &cobra.Command{
 func RunServer(_ *cobra.Command, _ []string) { // coverage-ignore
 	ctrl.SetLogger(log.ComponentLogger("srv").Logr())
 
-	ctx, cancelMain, shutdown := openmfpcontext.StartContext(log, operatorCfg, defaultCfg.ShutdownTimeout)
+	ctx, cancelMain, shutdown := platformmeshcontext.StartContext(log, operatorCfg, defaultCfg.ShutdownTimeout)
 	defer shutdown()
 
 	var err error
