@@ -4,13 +4,10 @@ import (
 	"net/http"
 )
 
-// Middleware defines a function that wraps an http.Handler.
-type Middleware func(http.Handler) http.Handler
-
-// CreateAuthMiddleware returns a slice of Middleware functions for authentication and authorization.
+// CreateAuthMiddleware returns a slice of middleware functions for authentication and authorization.
 // The returned middlewares are: StoreWebToken, StoreAuthHeader, and StoreSpiffeHeader.
-func CreateAuthMiddleware() []Middleware {
-	return []Middleware{
+func CreateAuthMiddleware() []func(http.Handler) http.Handler {
+	return []func(http.Handler) http.Handler{
 		StoreWebToken(),
 		StoreAuthHeader(),
 		StoreSpiffeHeader(),
