@@ -6,34 +6,196 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParseAudiences(t *testing.T) {
-	rawAudiences := []interface{}{
-		"audience1",
-		"audience2",
-		1812, // wrong audience
-	}
-
-	token := rawWebToken{
-		rawClaims: rawClaims{
-			RawAudiences: rawAudiences,
+func TestRawWebToken_GetAudiences(t *testing.T) {
+	tests := []struct {
+		name           string
+		rawAudiences   interface{}
+		expectedResult []string
+		expectedLen    int
+	}{
+		{
+			name: "slice of interfaces with mixed types",
+			rawAudiences: []interface{}{
+				"audience1",
+				"audience2",
+				1812, // wrong audience type
+			},
+			expectedResult: []string{"audience1", "audience2"},
+			expectedLen:    2,
+		},
+		{
+			name:           "single string audience",
+			rawAudiences:   "audience1",
+			expectedResult: []string{"audience1"},
+			expectedLen:    1,
+		},
+		{
+			name:           "nil audience",
+			rawAudiences:   nil,
+			expectedResult: nil,
+			expectedLen:    0,
+		},
+		{
+			name:           "empty slice",
+			rawAudiences:   []interface{}{},
+			expectedResult: nil,
+			expectedLen:    0,
+		},
+		{
+			name: "slice with only invalid types",
+			rawAudiences: []interface{}{
+				1812,
+				true,
+				42.5,
+			},
+			expectedResult: nil,
+			expectedLen:    0,
 		},
 	}
 
-	parsedAudiences := token.getAudiences()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := rawWebToken{
+				rawClaims: rawClaims{
+					RawAudiences: tt.rawAudiences,
+				},
+			}
 
-	assert.Contains(t, parsedAudiences, "audience1")
-	assert.Contains(t, parsedAudiences, "audience2")
-	assert.NotContains(t, parsedAudiences, 1812)
+			parsedAudiences := token.getAudiences()
+
+			assert.Equal(t, tt.expectedLen, len(parsedAudiences))
+			for _, expected := range tt.expectedResult {
+				assert.Contains(t, parsedAudiences, expected)
+			}
+
+			// Ensure invalid types are not included
+			if tt.name == "slice of interfaces with mixed types" {
+				assert.NotContains(t, parsedAudiences, 1812)
+			}
+		})
+	}
 }
-func TestParseAudiencesString(t *testing.T) {
-	token := rawWebToken{
-		rawClaims: rawClaims{
-			RawAudiences: "audience1",
+
+func TestRawWebToken_GetFirstName(t *testing.T) {
+	tests := []struct {
+		name         string
+		firstName    string
+		rawGivenName string
+		expected     string
+	}{
+		{
+			name:         "prefer first_name over given_name",
+			firstName:    "John",
+			rawGivenName: "Jonathan",
+			expected:     "John",
+		},
+		{
+			name:         "fallback to given_name when first_name is empty",
+			firstName:    "",
+			rawGivenName: "Jonathan",
+			expected:     "Jonathan",
+		},
+		{
+			name:         "both empty",
+			firstName:    "",
+			rawGivenName: "",
+			expected:     "",
+		},
+		{
+			name:         "first_name with whitespace only",
+			firstName:    "   ",
+			rawGivenName: "Jonathan",
+			expected:     "Jonathan",
+		},
+		{
+			name:         "first_name with leading/trailing whitespace",
+			firstName:    "  John  ",
+			rawGivenName: "Jonathan",
+			expected:     "John",
+		},
+		{
+			name:         "only first_name provided",
+			firstName:    "John",
+			rawGivenName: "",
+			expected:     "John",
 		},
 	}
 
-	parsedAudiences := token.getAudiences()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := rawWebToken{
+				UserAttributes: UserAttributes{
+					FirstName: tt.firstName,
+				},
+				rawClaims: rawClaims{
+					RawGivenName: tt.rawGivenName,
+				},
+			}
 
-	assert.Contains(t, parsedAudiences, "audience1")
-	assert.Equal(t, len(parsedAudiences), 1)
+			firstName := token.getFirstName()
+			assert.Equal(t, tt.expected, firstName)
+		})
+	}
+}
+
+func TestRawWebToken_GetLastName(t *testing.T) {
+	tests := []struct {
+		name          string
+		lastName      string
+		rawFamilyName string
+		expected      string
+	}{
+		{
+			name:          "prefer last_name over family_name",
+			lastName:      "Doe",
+			rawFamilyName: "Smith",
+			expected:      "Doe",
+		},
+		{
+			name:          "fallback to family_name when last_name is empty",
+			lastName:      "",
+			rawFamilyName: "Smith",
+			expected:      "Smith",
+		},
+		{
+			name:          "both empty",
+			lastName:      "",
+			rawFamilyName: "",
+			expected:      "",
+		},
+		{
+			name:          "last_name with whitespace only",
+			lastName:      "   ",
+			rawFamilyName: "Smith",
+			expected:      "Smith",
+		},
+		{
+			name:          "last_name with leading/trailing whitespace",
+			lastName:      "  Doe  ",
+			rawFamilyName: "Smith",
+			expected:      "Doe",
+		},
+		{
+			name:          "only last_name provided",
+			lastName:      "Doe",
+			rawFamilyName: "",
+			expected:      "Doe",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := rawWebToken{
+				UserAttributes: UserAttributes{
+					LastName: tt.lastName,
+				},
+				rawClaims: rawClaims{
+					RawFamilyName: tt.rawFamilyName,
+				},
+			}
+
+			lastName := token.getLastName()
+			assert.Equal(t, tt.expected, lastName)
+		})
+	}
 }
