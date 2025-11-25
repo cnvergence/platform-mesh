@@ -3,6 +3,7 @@ package multicluster
 import (
 	"context"
 	"fmt"
+	"log"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -13,10 +14,13 @@ import (
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
+	"k8s.io/client-go/util/workqueue"
+
 	"github.com/platform-mesh/golang-commons/controller/filter"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/api"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/conditions"
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/ratelimiter"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/runtimeobject"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/spread"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/subroutine"
@@ -35,6 +39,7 @@ type LifecycleManager struct {
 	spreader           *spread.Spreader
 	conditionsManager  *conditions.ConditionManager
 	prepareContextFunc api.PrepareContextFunc
+	rateLimiter        workqueue.TypedRateLimiter[mcreconcile.Request]
 }
 
 func NewLifecycleManager(subroutines []subroutine.Subroutine, operatorName string, controllerName string, mgr ClusterGetter, log *logger.Logger) *LifecycleManager {
@@ -96,6 +101,11 @@ func (l *LifecycleManager) SetupWithManagerBuilder(mgr mcmanager.Manager, maxRec
 	opts := controller.TypedOptions[mcreconcile.Request]{
 		MaxConcurrentReconciles: maxReconciles,
 	}
+
+	if l.rateLimiter != nil {
+		opts.RateLimiter = l.rateLimiter
+	}
+
 	return mcbuilder.ControllerManagedBy(mgr).
 		Named(reconcilerName).
 		For(instance).
@@ -134,5 +144,14 @@ func (l *LifecycleManager) WithSpreadingReconciles() api.Lifecycle {
 
 func (l *LifecycleManager) WithConditionManagement() api.Lifecycle {
 	l.conditionsManager = conditions.NewConditionManager()
+	return l
+}
+
+func (l *LifecycleManager) WithStaticThenExponentialRateLimiter(opts ...ratelimiter.Option) *LifecycleManager {
+	rateLimiter, err := ratelimiter.NewStaticThenExponentialRateLimiter[mcreconcile.Request](ratelimiter.NewConfig(opts...))
+	if err != nil {
+		log.Fatalf("rate limiter config error: %s",err)
+	}
+	l.rateLimiter = rateLimiter
 	return l
 }

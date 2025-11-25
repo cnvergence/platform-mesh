@@ -4,6 +4,7 @@ import (
 	"context"
 	goerrors "errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/ratelimiter"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/runtimeobject"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/subroutine"
 	pmtesting "github.com/platform-mesh/golang-commons/controller/testSupport"
@@ -150,6 +152,31 @@ func TestLifecycle(t *testing.T) {
 
 		// Then
 		assert.True(t, true, l.ConditionsManager() != nil)
+	})
+
+	t.Run("WithRateLimiter", func(t *testing.T) {
+		fakeClient := pmtesting.CreateFakeClient(t, &pmtesting.TestApiObject{})
+		_, log := createLifecycleManager([]subroutine.Subroutine{}, fakeClient)
+
+		l := NewLifecycleManager([]subroutine.Subroutine{}, "test-operator", "test-controller", fakeClient, log.Logger)
+		expectedCfg := ratelimiter.Config{
+			StaticRequeueDelay:        5 * time.Second,
+			StaticWindow:              10 * time.Second,
+			ExponentialInitialBackoff: 5 * time.Second,
+			ExponentialMaxBackoff:     time.Minute,
+		}
+		l.WithStaticThenExponentialRateLimiter(
+			ratelimiter.WithRequeueDelay(expectedCfg.StaticRequeueDelay),
+			ratelimiter.WithStaticWindow(expectedCfg.StaticWindow),
+			ratelimiter.WithExponentialInitialBackoff(expectedCfg.ExponentialInitialBackoff),
+			ratelimiter.WithExponentialMaxBackoff(expectedCfg.ExponentialMaxBackoff),
+		)
+
+		assert.NotNil(t, l.rateLimiter, "rate limiter should be configured")
+
+		req := controllerruntime.Request{}
+		delay := l.rateLimiter.When(req)
+		assert.Equal(t, expectedCfg.StaticRequeueDelay, delay)
 	})
 
 }

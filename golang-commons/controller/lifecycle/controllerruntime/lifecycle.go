@@ -3,6 +3,7 @@ package controllerruntime
 import (
 	"context"
 	"fmt"
+	"log"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -11,10 +12,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"k8s.io/client-go/util/workqueue"
+
 	"github.com/platform-mesh/golang-commons/controller/filter"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/api"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/conditions"
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/ratelimiter"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/runtimeobject"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/spread"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/subroutine"
@@ -29,6 +33,7 @@ type LifecycleManager struct {
 	spreader           *spread.Spreader
 	conditionsManager  *conditions.ConditionManager
 	prepareContextFunc api.PrepareContextFunc
+	rateLimiter        workqueue.TypedRateLimiter[reconcile.Request]
 }
 
 func NewLifecycleManager(subroutines []subroutine.Subroutine, operatorName string, controllerName string, client client.Client, log *logger.Logger) *LifecycleManager {
@@ -83,10 +88,18 @@ func (l *LifecycleManager) SetupWithManagerBuilder(mgr ctrl.Manager, maxReconcil
 	}
 
 	eventPredicates = append([]predicate.Predicate{filter.DebugResourcesBehaviourPredicate(debugLabelValue)}, eventPredicates...)
+	opts := controller.Options{
+		MaxConcurrentReconciles: maxReconciles,
+	}
+
+	if l.rateLimiter != nil {
+		opts.RateLimiter = l.rateLimiter
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(reconcilerName).
 		For(instance).
-		WithOptions(controller.Options{MaxConcurrentReconciles: maxReconciles}).
+		WithOptions(opts).
 		WithEventFilter(predicate.And(eventPredicates...)), nil
 }
 func (l *LifecycleManager) SetupWithManager(mgr ctrl.Manager, maxReconciles int, reconcilerName string, instance runtimeobject.RuntimeObject, debugLabelValue string, r reconcile.Reconciler, log *logger.Logger, eventPredicates ...predicate.Predicate) error {
@@ -121,5 +134,14 @@ func (l *LifecycleManager) WithSpreadingReconciles() *LifecycleManager {
 
 func (l *LifecycleManager) WithConditionManagement() *LifecycleManager {
 	l.conditionsManager = conditions.NewConditionManager()
+	return l
+}
+
+func (l *LifecycleManager) WithStaticThenExponentialRateLimiter(opts ...ratelimiter.Option) *LifecycleManager {
+	rateLimiter, err := ratelimiter.NewStaticThenExponentialRateLimiter[reconcile.Request](ratelimiter.NewConfig(opts...))
+	if err != nil {
+		log.Fatalf("rate limiter config error: %s",err)
+	}
+	l.rateLimiter = rateLimiter
 	return l
 }

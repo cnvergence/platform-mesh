@@ -6,6 +6,7 @@ import (
 
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/controllerruntime"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/multicluster"
+	"github.com/platform-mesh/golang-commons/controller/lifecycle/ratelimiter"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/subroutine"
 	"github.com/platform-mesh/golang-commons/logger"
 )
@@ -16,6 +17,7 @@ type Builder struct {
 	withConditionManagement bool
 	withSpreadingReconciles bool
 	withReadOnly            bool
+	rateLimiterOptions      *[]ratelimiter.Option
 	subroutines             []subroutine.Subroutine
 	log                     *logger.Logger
 }
@@ -45,6 +47,11 @@ func (b *Builder) WithReadOnly() *Builder {
 	return b
 }
 
+func (b *Builder) WithStaticThenExponentialRateLimiter(opts ...ratelimiter.Option) *Builder {
+	b.rateLimiterOptions = &opts
+	return b
+}
+
 func (b *Builder) BuildControllerRuntime(cl client.Client) *controllerruntime.LifecycleManager {
 	lm := controllerruntime.NewLifecycleManager(b.subroutines, b.operatorName, b.controllerName, cl, b.log)
 	if b.withConditionManagement {
@@ -55,6 +62,9 @@ func (b *Builder) BuildControllerRuntime(cl client.Client) *controllerruntime.Li
 	}
 	if b.withReadOnly {
 		lm.WithReadOnly()
+	}
+	if b.rateLimiterOptions != nil {
+		lm.WithStaticThenExponentialRateLimiter((*b.rateLimiterOptions)...)
 	}
 	return lm
 }
@@ -69,6 +79,9 @@ func (b *Builder) BuildMultiCluster(mgr mcmanager.Manager) *multicluster.Lifecyc
 	}
 	if b.withReadOnly {
 		lm.WithReadOnly()
+	}
+	if b.rateLimiterOptions != nil {
+		lm.WithStaticThenExponentialRateLimiter((*b.rateLimiterOptions)...)
 	}
 	return lm
 }
