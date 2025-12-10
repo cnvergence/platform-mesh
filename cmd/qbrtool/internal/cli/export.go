@@ -21,19 +21,23 @@ var (
 	itemTypes       []string
 	includeArchived bool
 	outputFile      string
+	exportFormat    string
 )
 
 var exportCmd = &cobra.Command{
 	Use:   "export",
-	Short: "Export project board items to JSON",
-	Long: `Export items from a GitHub Project Board to JSON format.
+	Short: "Export project board items to JSON or CSV",
+	Long: `Export items from a GitHub Project Board to JSON or CSV format.
 
 Supports filtering by quarter (e.g., Q3-2024) and item types (issue, pr, draft, epic).
 Can include archived items using the --include-archived flag.
 
 Examples:
-  # Export all items from Q3-2024
+  # Export all items from Q3-2024 as JSON
   qbrtool export --quarter Q3-2024 -f q3-2024.json
+
+  # Export as CSV for easy reading
+  qbrtool export --quarter Q3-2024 --format csv -f q3-2024.csv
 
   # Export only issues including archived
   qbrtool export --type issue --include-archived -f issues.json
@@ -50,6 +54,7 @@ func init() {
 	exportCmd.Flags().StringSliceVarP(&itemTypes, "type", "t", nil, "Item types to include (issue, pr, draft, epic)")
 	exportCmd.Flags().BoolVar(&includeArchived, "include-archived", false, "Include archived items")
 	exportCmd.Flags().StringVarP(&outputFile, "output-file", "f", "", "Output file path (default: stdout)")
+	exportCmd.Flags().StringVarP(&exportFormat, "format", "F", "json", "Output format: json, csv")
 }
 
 func runExport(cmd *cobra.Command, args []string) error {
@@ -145,35 +150,65 @@ func runExport(cmd *cobra.Command, args []string) error {
 		Log("Items after filtering: %d", len(items))
 	}
 
-	// Export to JSON
+	// Prepare export result
 	result := exporter.ExportResult{
 		Metadata: exporter.Metadata{
-			Organization:  org,
-			ProjectNumber: projectNumber,
-			Quarter:       quarter,
-			ItemTypes:     itemTypes,
+			Organization:    org,
+			ProjectNumber:   projectNumber,
+			Quarter:         quarter,
+			ItemTypes:       itemTypes,
 			IncludeArchived: includeArchived,
-			TotalItems:    len(items),
+			TotalItems:      len(items),
 		},
 		Items: items,
 	}
 
-	output, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+	// Validate format
+	format := strings.ToLower(exportFormat)
+	if format != "json" && format != "csv" {
+		return fmt.Errorf("unknown output format: %s (supported: json, csv)", exportFormat)
 	}
 
-	// Write output
+	// Write output based on format
 	if outputFile != "" {
-		if err := os.WriteFile(outputFile, output, 0644); err != nil {
-			return fmt.Errorf("failed to write output file: %w", err)
+		f, err := os.Create(outputFile)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer f.Close()
+
+		if err := writeExportOutput(f, &result, format); err != nil {
+			return err
 		}
 		fmt.Fprintf(os.Stderr, "Exported %d items to %s\n", len(items), outputFile)
 	} else {
-		fmt.Println(string(output))
+		if err := writeExportOutput(os.Stdout, &result, format); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func writeExportOutput(w *os.File, result *exporter.ExportResult, format string) error {
+	switch format {
+	case "csv":
+		return exporter.WriteCSV(w, result)
+	default:
+		output, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		_, err = w.Write(output)
+		if err != nil {
+			return fmt.Errorf("failed to write JSON: %w", err)
+		}
+		// Add newline for stdout
+		if w == os.Stdout {
+			fmt.Println()
+		}
+		return nil
+	}
 }
 
 // mergeItems merges current and archived items, deduplicating by ID

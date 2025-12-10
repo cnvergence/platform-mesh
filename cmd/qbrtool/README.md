@@ -4,7 +4,7 @@ A Go CLI tool for exporting and analyzing GitHub Project Board items. Designed f
 
 ## Features
 
-- **Export to JSON** - Export project board items with filtering options
+- **Export to JSON or CSV** - Export project board items with filtering options
 - **Quarter filtering** - Filter items closed within a calendar quarter (Q1-Q4)
 - **Item type filtering** - Filter by issue, PR, draft, or epic
 - **Archived items support** - Retrieve archived items via search API workaround
@@ -53,7 +53,7 @@ If you have the GitHub CLI (`gh`) installed and authenticated:
 export GITHUB_TOKEN=$(gh auth token)
 
 # Or run directly with the token
-GITHUB_TOKEN=$(gh auth token) ./bin/qbrtool export --quarter Q3-2024
+GITHUB_TOKEN=$(gh auth token) ./bin/qbrtool export --quarter Q3-2025
 ```
 
 You can add this to your shell profile (`.bashrc`, `.zshrc`, etc.):
@@ -80,36 +80,39 @@ export GITHUB_TOKEN=github_pat_xxxxxxxxxxxx
 ### Option 3: Pass token directly
 
 ```bash
-./bin/qbrtool export --token github_pat_xxxxxxxxxxxx --quarter Q3-2024
+./bin/qbrtool export --token github_pat_xxxxxxxxxxxx --quarter Q3-2025
 ```
 
 ## Usage
 
 ### Export Command
 
-Export project board items to JSON format.
+Export project board items to JSON or CSV format.
 
 ```bash
-# Export items closed in Q3-2024 (July-September)
-./bin/qbrtool export --quarter Q3-2024 -f q3-2024.json
+# Export items closed in Q3-2025 (July-September)
+./bin/qbrtool export --quarter Q3-2025 -f q3-2025.json
+
+# Export as CSV for easy reading
+./bin/qbrtool export --quarter Q3-2025 --format csv -f q3-2025.csv
 
 # Include archived items (uses search API workaround)
-./bin/qbrtool export --quarter Q3-2024 --include-archived -f q3-2024.json
+./bin/qbrtool export --quarter Q3-2025 --include-archived -f q3-2025.json
 
 # Export only issues
-./bin/qbrtool export --quarter Q3-2024 --type issue -f issues.json
+./bin/qbrtool export --quarter Q3-2025 --type issue -f issues.json
 
 # Export only PRs
-./bin/qbrtool export --quarter Q3-2024 --type pr -f prs.json
+./bin/qbrtool export --quarter Q3-2025 --type pr -f prs.json
 
 # Export epics only
-./bin/qbrtool export --quarter Q3-2024 --type epic -f epics.json
+./bin/qbrtool export --quarter Q3-2025 --type epic -f epics.json
 
 # Export from a different project
-./bin/qbrtool export --org my-org --project 5 --quarter Q3-2024
+./bin/qbrtool export --org my-org --project 5 --quarter Q3-2025
 
 # Export to stdout (for piping)
-./bin/qbrtool export --quarter Q3-2024 --include-archived
+./bin/qbrtool export --quarter Q3-2025 --include-archived
 ```
 
 #### Export Flags
@@ -118,39 +121,43 @@ Export project board items to JSON format.
 |------|-------|-------------|---------|
 | `--org` | `-o` | GitHub organization name | `platform-mesh` |
 | `--project` | `-p` | Project number | `1` |
-| `--quarter` | `-q` | Show items closed in quarter (e.g., Q3-2024) | - |
+| `--quarter` | `-q` | Show items closed in quarter (e.g., Q3-2025) | - |
 | `--type` | `-t` | Item types: issue, pr, draft, epic | all |
 | `--include-archived` | - | Include archived items | `false` |
 | `--output-file` | `-f` | Output file path | stdout |
+| `--format` | `-F` | Output format: json, csv | `json` |
 
 ### Analyze Command
 
-Analyze exported items for specific categories.
+Analyze exported items for specific categories. Supports JSON and Markdown output formats.
 
 ```bash
 # Run all analyzers
-./bin/qbrtool analyze -i q3-2024.json --analysis all
+./bin/qbrtool analyze -i q3-2025.json --analysis all
+
+# Generate markdown report for quarterly review
+./bin/qbrtool analyze -i q3-2025.json --analysis all --format md -f report.md
 
 # Find CVEs
-./bin/qbrtool analyze -i q3-2024.json --analysis cve
+./bin/qbrtool analyze -i q3-2025.json --analysis cve
 
 # Find OSS contributions
-./bin/qbrtool analyze -i q3-2024.json --analysis oss
+./bin/qbrtool analyze -i q3-2025.json --analysis oss
 
 # Find monitoring-related items
-./bin/qbrtool analyze -i q3-2024.json --analysis monitoring
+./bin/qbrtool analyze -i q3-2025.json --analysis monitoring
 
 # Find lifecycle management items
-./bin/qbrtool analyze -i q3-2024.json --analysis lifecycle
+./bin/qbrtool analyze -i q3-2025.json --analysis lifecycle
 
 # Find security-related items
-./bin/qbrtool analyze -i q3-2024.json --analysis security
+./bin/qbrtool analyze -i q3-2025.json --analysis security
 
 # Custom OSS organizations
-./bin/qbrtool analyze -i q3-2024.json --analysis oss --oss-orgs kubernetes,istio,envoyproxy
+./bin/qbrtool analyze -i q3-2025.json --analysis oss --oss-orgs kubernetes,istio,envoyproxy
 
 # Save analysis to file
-./bin/qbrtool analyze -i q3-2024.json --analysis all -f analysis.json
+./bin/qbrtool analyze -i q3-2025.json --analysis all -f analysis.json
 ```
 
 #### Analyze Flags
@@ -161,17 +168,18 @@ Analyze exported items for specific categories.
 | `--analysis` | `-a` | Analysis type(s) | `all` |
 | `--oss-orgs` | - | OSS orgs to detect | `kcp-dev,kube-bind,multicluster-runtime` |
 | `--output-file` | `-f` | Output file path | stdout |
+| `--format` | `-F` | Output format: json, markdown, md | `json` |
 
 ### Pipeline Usage
 
 Export and analyze in one command:
 
 ```bash
-# Export items closed in Q3-2024 and run all analyzers
-./bin/qbrtool export --quarter Q3-2024 --include-archived | ./bin/qbrtool analyze --analysis all
+# Export items closed in Q3-2025 and run all analyzers
+./bin/qbrtool export --quarter Q3-2025 --include-archived | ./bin/qbrtool analyze --analysis all
 
 # Export, analyze, and save
-./bin/qbrtool export --quarter Q3-2024 --include-archived | ./bin/qbrtool analyze --analysis all -f report.json
+./bin/qbrtool export --quarter Q3-2025 --include-archived | ./bin/qbrtool analyze --analysis all -f report.json
 ```
 
 ### Verbose Mode
@@ -179,7 +187,7 @@ Export and analyze in one command:
 Enable verbose logging to see what the tool is doing:
 
 ```bash
-./bin/qbrtool export --quarter Q3-2024 --include-archived -v
+./bin/qbrtool export --quarter Q3-2025 --include-archived -v
 ```
 
 ## Analysis Types
@@ -209,7 +217,7 @@ Keywords: security, vulnerability, CVE, RBAC, authentication, authorization, TLS
 
 ## Output Format
 
-### Export Output
+### Export Output (JSON)
 
 When using `--quarter`, only items closed within that quarter are returned.
 
@@ -218,10 +226,10 @@ When using `--quarter`, only items closed within that quarter are returned.
   "metadata": {
     "organization": "platform-mesh",
     "project_number": 1,
-    "quarter": "Q3-2024",
+    "quarter": "Q3-2025",
     "include_archived": true,
     "total_items": 42,
-    "exported_at": "2024-10-15T10:30:00Z"
+    "exported_at": "2025-10-15T10:30:00Z"
   },
   "items": [
     {
@@ -229,12 +237,12 @@ When using `--quarter`, only items closed within that quarter are returned.
       "type": "ISSUE",
       "is_archived": false,
       "number": 123,
-      "title": "Fix CVE-2024-1234",
+      "title": "Fix CVE-2025-1234",
       "body": "...",
       "state": "CLOSED",
       "url": "https://github.com/...",
-      "created_at": "2024-07-15T...",
-      "closed_at": "2024-08-20T...",
+      "created_at": "2025-07-15T...",
+      "closed_at": "2025-08-20T...",
       "repository": {
         "owner": "platform-mesh",
         "name": "my-repo"
@@ -250,7 +258,17 @@ When using `--quarter`, only items closed within that quarter are returned.
 }
 ```
 
-### Analysis Output
+### Export Output (CSV)
+
+CSV format provides a flat, tabular view with minimal columns for easy reading:
+
+```csv
+number,type,title,state,url,closed_at,repository,labels
+123,ISSUE,Fix CVE-2025-1234,CLOSED,https://github.com/...,2025-08-20,platform-mesh/my-repo,"security, priority/high"
+456,PULL_REQUEST,Add monitoring dashboard,MERGED,https://github.com/...,2025-09-10,platform-mesh/my-repo,monitoring
+```
+
+### Analysis Output (JSON)
 
 ```json
 {
@@ -260,10 +278,10 @@ When using `--quarter`, only items closed within that quarter are returned.
       "type": "cve",
       "items": [...],
       "summary": {
-        "cve_ids": ["CVE-2024-1234", "CVE-2024-5678"],
+        "cve_ids": ["CVE-2025-1234", "CVE-2025-5678"],
         "count": 2
       },
-      "timestamp": "2024-10-15T..."
+      "timestamp": "2025-10-15T..."
     },
     "oss": {
       "type": "oss",
@@ -278,6 +296,48 @@ When using `--quarter`, only items closed within that quarter are returned.
     }
   }
 }
+```
+
+### Analysis Output (Markdown)
+
+Markdown format generates a quarterly report grouped by analyzer:
+
+```markdown
+# Quarterly Analysis Report
+
+## Source Information
+
+| Field | Value |
+|-------|-------|
+| Organization | platform-mesh |
+| Project | #1 |
+| Quarter | Q3-2025 |
+| Total Items | 42 |
+
+---
+
+## CVE Analysis
+
+**CVEs found:** `CVE-2025-1234`, `CVE-2025-5678`
+
+Found **2** items.
+
+| # | Title | URL | Match |
+|---|-------|-----|-------|
+| 123 | Fix CVE-2025-1234 | [#123](url) | title: CVE-2025-1234 |
+
+## OSS Contributions
+
+**Contributions by organization:**
+
+- **kcp-dev**: 5 items
+- **kube-bind**: 3 items
+
+Found **8** items.
+
+| # | Title | URL | Match |
+|---|-------|-----|-------|
+| 456 | Add feature to kcp | [#456](url) | repository: kcp-dev/kcp |
 ```
 
 ## Development

@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	inputFile    string
-	analysisType string
-	ossOrgs      []string
+	inputFile     string
+	analysisType  string
+	ossOrgs       []string
 	analyzeOutput string
+	analyzeFormat string
 )
 
 var analyzeCmd = &cobra.Command{
@@ -33,12 +34,19 @@ Analysis types:
   - security: Find security related items
   - all: Run all analyzers
 
+Output formats:
+  - json: Detailed JSON output (default)
+  - markdown/md: Markdown report grouped by analyzer
+
 Examples:
   # Analyze for CVEs
   qbrtool analyze -i items.json --analysis cve
 
-  # Run all analyzers
+  # Run all analyzers with JSON output
   qbrtool analyze -i items.json --analysis all
+
+  # Generate markdown report
+  qbrtool analyze -i items.json --analysis all --format md -f report.md
 
   # Analyze from stdin
   cat items.json | qbrtool analyze --analysis all`,
@@ -50,6 +58,7 @@ func init() {
 	analyzeCmd.Flags().StringVarP(&analysisType, "analysis", "a", "all", "Analysis type: cve, oss, monitoring, lifecycle, security, all")
 	analyzeCmd.Flags().StringSliceVar(&ossOrgs, "oss-orgs", []string{"kcp-dev", "kube-bind", "multicluster-runtime"}, "OSS organizations to detect")
 	analyzeCmd.Flags().StringVarP(&analyzeOutput, "output-file", "f", "", "Output file path (default: stdout)")
+	analyzeCmd.Flags().StringVarP(&analyzeFormat, "format", "F", "json", "Output format: json, markdown, md")
 }
 
 func runAnalyze(cmd *cobra.Command, args []string) error {
@@ -93,29 +102,55 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		Log("%s: found %d matches", a.Name(), len(result.Items))
 	}
 
-	// Build output
-	output := AnalyzeOutput{
-		SourceMetadata: exportResult.Metadata,
-		Results:        results,
+	// Validate format
+	format := strings.ToLower(analyzeFormat)
+	if format != "json" && format != "markdown" && format != "md" {
+		return fmt.Errorf("unknown output format: %s (supported: json, markdown, md)", analyzeFormat)
 	}
 
-	jsonOutput, err := json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal output: %w", err)
-	}
-
-	// Write output
+	// Write output based on format
 	if analyzeOutput != "" {
-		if err := os.WriteFile(analyzeOutput, jsonOutput, 0644); err != nil {
-			return fmt.Errorf("failed to write output file: %w", err)
+		f, err := os.Create(analyzeOutput)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer f.Close()
+
+		if err := writeAnalyzeOutput(f, exportResult.Metadata, results, format); err != nil {
+			return err
 		}
 		// Print summary to stderr
 		printSummary(results)
 	} else {
-		fmt.Println(string(jsonOutput))
+		if err := writeAnalyzeOutput(os.Stdout, exportResult.Metadata, results, format); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func writeAnalyzeOutput(w io.Writer, metadata exporter.Metadata, results map[string]*models.AnalysisResult, format string) error {
+	switch format {
+	case "markdown", "md":
+		return analyzer.WriteMarkdown(w, metadata, results)
+	default:
+		output := AnalyzeOutput{
+			SourceMetadata: metadata,
+			Results:        results,
+		}
+		jsonOutput, err := json.MarshalIndent(output, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON: %w", err)
+		}
+		_, err = w.Write(jsonOutput)
+		if err != nil {
+			return fmt.Errorf("failed to write JSON: %w", err)
+		}
+		// Add newline
+		fmt.Fprintln(w)
+		return nil
+	}
 }
 
 type AnalyzeOutput struct {
