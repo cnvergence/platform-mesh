@@ -418,4 +418,4 @@ make install        # Install to $GOPATH/bin
 
 ## License
 
-MIT
+Apache 2.0
