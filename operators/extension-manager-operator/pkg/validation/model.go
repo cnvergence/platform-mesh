@@ -189,14 +189,15 @@ type Project struct {
 }
 
 type DefineEntity struct {
-	Id             string          `json:"id,omitempty" yaml:"id,omitempty"`
-	UseBack        bool            `json:"useBack,omitempty" yaml:"useBack,omitempty"`
-	ContextKey     string          `json:"contextKey,omitempty" yaml:"contextKey,omitempty"`
-	DynamicFetchId string          `json:"dynamicFetchId,omitempty" yaml:"dynamicFetchId,omitempty"`
-	Label          string          `json:"label,omitempty" yaml:"label,omitempty"`
-	PluralLabel    string          `json:"pluralLabel,omitempty" yaml:"pluralLabel,omitempty"`
-	NotFoundConfig *NotFoundConfig `json:"notFoundConfig,omitempty" yaml:"notFoundConfig,omitempty"`
-	GraphqlEntity  *GraphqlEntity  `json:"graphqlEntity,omitempty" yaml:"graphqlEntity,omitempty"`
+	Id                    string          `json:"id,omitempty" yaml:"id,omitempty"`
+	UseBack               bool            `json:"useBack,omitempty" yaml:"useBack,omitempty"`
+	ContextKey            string          `json:"contextKey,omitempty" yaml:"contextKey,omitempty"`
+	DynamicFetchId        string          `json:"dynamicFetchId,omitempty" yaml:"dynamicFetchId,omitempty"`
+	Label                 string          `json:"label,omitempty" yaml:"label,omitempty"`
+	PluralLabel           string          `json:"pluralLabel,omitempty" yaml:"pluralLabel,omitempty"`
+	NotFoundConfig        *NotFoundConfig `json:"notFoundConfig,omitempty" yaml:"notFoundConfig,omitempty"`
+	GraphqlEntity         *GraphqlEntity  `json:"graphqlEntity,omitempty" yaml:"graphqlEntity,omitempty"`
+	AdditionalContextKeys []string        `json:"additionalContextKeys,omitempty" yaml:"additionalContextKeys,omitempty"`
 }
 
 type GraphqlEntity struct {

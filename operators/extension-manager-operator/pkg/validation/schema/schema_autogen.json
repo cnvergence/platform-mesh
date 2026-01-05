@@ -114,6 +114,12 @@
         },
         "graphqlEntity": {
           "$ref": "#/$defs/GraphqlEntity"
+        },
+        "additionalContextKeys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "additionalProperties": false,
