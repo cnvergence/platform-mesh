@@ -268,13 +268,14 @@ func updateStatus(ctx context.Context, cl client.Client, original runtime.Object
 	log.Info().Msg("updating resource status")
 	err = cl.Status().Update(ctx, current)
 	if err != nil {
-		if !kerrors.IsConflict(err) {
+		if kerrors.IsConflict(err) {
+			log.Warn().Err(err).Msg("cannot update reconciliation Conditions, kubernetes client error")
+		} else {
 			log.Error().Err(err).Msg("cannot update status, kubernetes client error")
 			if generationChanged {
 				sentry.CaptureError(err, sentryTags, sentry.Extras{"message": "Updating of instance status failed"})
 			}
 		}
-		log.Error().Err(err).Msg("cannot update reconciliation Conditions, kubernetes client error")
 		return err
 	}
 
