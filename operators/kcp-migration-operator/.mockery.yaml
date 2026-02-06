@@ -1,0 +1,14 @@
+all: false
+with-expecter: true
+log-level: info
+dir: 'pkg/mocks'
+outpkg: mocks
+packages:
+  sigs.k8s.io/controller-runtime/pkg/client:
+    config:
+      include-regex: "^Client$"
+      filename: mock_K8Client.go
+  github.com/platform-mesh/kcp-migration-operator/internal/kcp:
+    config:
+      include-regex: WorkspaceClientFactory
+      filename: mock_workspace_client_factory.go

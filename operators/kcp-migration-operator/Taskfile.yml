@@ -1,0 +1,131 @@
+version: '3'
+
+vars:
+  LOCAL_BIN: bin
+  CONTROLLER_TOOLS_VERSION: v0.19.0
+  ENVTEST_K8S_VERSION: "1.30.x"
+  ENVTEST_VERSION: release-0.19
+  CRD_DIRECTORY: config/crd
+  GOARCH:
+    sh: go env GOARCH
+  GOOS:
+    sh: go env GOOS
+
+tasks:
+  ## Setup
+  setup:controller-gen:
+    internal: true
+    cmds:
+      - test -s {{.LOCAL_BIN}}/controller-gen || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_TOOLS_VERSION}}
+
+  setup:golangci-lint:
+    internal: true
+    cmds:
+      - test -s {{.LOCAL_BIN}}/golangci-lint || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+  setup:envtest:
+    internal: true
+    cmds:
+      - test -s {{.LOCAL_BIN}}/setup-envtest || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install sigs.k8s.io/controller-runtime/tools/setup-envtest@{{.ENVTEST_VERSION}}
+
+  setup:mockery:
+    internal: true
+    cmds:
+      - test -s {{.LOCAL_BIN}}/mockery || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install github.com/vektra/mockery/v2@latest
+
+  ## Development
+  manifests:
+    desc: Generate CRD manifests
+    deps: [setup:controller-gen]
+    cmds:
+      - "{{.LOCAL_BIN}}/controller-gen rbac:roleName=manager-role crd paths=./... output:crd:artifacts:config={{.CRD_DIRECTORY}}"
+
+  generate:
+    desc: Generate code (deepcopy, manifests)
+    deps: [setup:controller-gen]
+    cmds:
+      - task: manifests
+      - "{{.LOCAL_BIN}}/controller-gen object:headerFile=hack/boilerplate.go.txt paths=./..."
+
+  generate:mocks:
+    desc: Generate mocks using mockery
+    deps: [setup:mockery]
+    cmds:
+      - "{{.LOCAL_BIN}}/mockery"
+
+  build:
+    desc: Build the operator binary
+    cmds:
+      - go build -o bin/manager main.go
+
+  docker-build:
+    desc: Build the Docker image
+    cmds:
+      - docker build .
+
+  ## Testing
+  fmt:
+    desc: Run go fmt
+    cmds:
+      - go fmt ./...
+
+  lint:
+    desc: Run linter
+    deps: [setup:golangci-lint]
+    cmds:
+      - task: fmt
+      - "{{.LOCAL_BIN}}/golangci-lint run --timeout 15m ./..."
+
+  envtest:
+    env:
+      KUBEBUILDER_ASSETS:
+        sh: $(pwd)/{{.LOCAL_BIN}}/setup-envtest use {{.ENVTEST_K8S_VERSION}} --bin-dir $(pwd)/{{.LOCAL_BIN}} -p path
+      GO111MODULE: on
+    cmds:
+      - go test ./... {{.ADDITIONAL_COMMAND_ARGS}}
+
+  test:
+    desc: Run tests
+    deps: [setup:envtest]
+    cmds:
+      - task: envtest
+
+  cover:
+    desc: Run tests with coverage
+    deps: [setup:envtest]
+    cmds:
+      - task: envtest
+        vars:
+          ADDITIONAL_COMMAND_ARGS: -v -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+
+  ## Run
+  run:
+    desc: Run the operator locally
+    cmds:
+      - go run main.go operator
+
+  ## Docker
+  docker:kind:
+    desc: "Build container image and load it into Kind cluster, then restart deployments"
+    vars:
+      CONTAINER_RUNTIME: '{{.CONTAINER_RUNTIME | default "docker"}}'
+      KIND_CLUSTER: '{{.KIND_CLUSTER | default "platform-mesh"}}'
+      DEPLOYMENT_NAMESPACE: '{{.DEPLOYMENT_NAMESPACE | default "platform-mesh-system"}}'
+      IMAGE_TAG:
+        sh: kubectl get deployment kcp-migration-operator -n {{.DEPLOYMENT_NAMESPACE}} -o jsonpath='{.spec.template.spec.containers[0].image}' | cut -d':' -f2
+      IMAGE_NAME: ghcr.io/platform-mesh/kcp-migration-operator:{{.IMAGE_TAG}}
+    cmds:
+      - echo "Building image with tag {{.IMAGE_TAG}} using {{.CONTAINER_RUNTIME}}"
+      - "{{.CONTAINER_RUNTIME}} build -t {{.IMAGE_NAME}} ."
+      - |
+        if [ "{{.CONTAINER_RUNTIME}}" = "podman" ]; then
+          {{.CONTAINER_RUNTIME}} save {{.IMAGE_NAME}} -o /tmp/kind-image.tar
+          kind load image-archive /tmp/kind-image.tar --name {{.KIND_CLUSTER}}
+          rm -f /tmp/kind-image.tar
+        else
+          kind load docker-image {{.IMAGE_NAME}} --name {{.KIND_CLUSTER}}
+        fi
+      - |
+        echo "Restarting all kcp-migration-operator deployments..."
+        kubectl get deployments -n {{.DEPLOYMENT_NAMESPACE}} -o name | grep kcp-migration-operator | xargs -I {} kubectl rollout restart {} -n {{.DEPLOYMENT_NAMESPACE}}
+      - echo "Image loaded and deployments restarted"

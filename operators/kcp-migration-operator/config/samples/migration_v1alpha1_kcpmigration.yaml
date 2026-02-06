@@ -1,0 +1,28 @@
+apiVersion: migration.platform-mesh.io/v1alpha1
+kind: KCPMigration
+metadata:
+  name: sample-migration
+  namespace: migration-system
+spec:
+  source:
+    apiVersion: apps.example.com/v1
+    kind: MyApp
+
+  transform:
+    # Derive workspace from source namespace
+    targetWorkspace:
+      expression: "root:platform-mesh:{{ .Source.metadata.namespace }}"
+
+    # Transform to Platform Mesh resource
+    template:
+      inline:
+        apiVersion: apps.platform-mesh.io/v1alpha1
+        kind: ManagedApp
+        metadata:
+          name: "{{ .Source.metadata.name }}"
+          labels:
+            platform-mesh.io/migrated: "true"
+            platform-mesh.io/source-namespace: "{{ .Source.metadata.namespace }}"
+        spec:
+          replicas: "{{ .Source.spec.replicas | default 1 }}"
+          image: "{{ .Source.spec.image }}"
