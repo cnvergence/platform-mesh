@@ -198,12 +198,13 @@ type DefineEntity struct {
 	NotFoundConfig        *NotFoundConfig `json:"notFoundConfig,omitempty" yaml:"notFoundConfig,omitempty"`
 	GraphqlEntity         *GraphqlEntity  `json:"graphqlEntity,omitempty" yaml:"graphqlEntity,omitempty"`
 	AdditionalContextKeys []string        `json:"additionalContextKeys,omitempty" yaml:"additionalContextKeys,omitempty"`
+	Type                  string          `json:"type,omitempty" yaml:"type,omitempty"`
 }
 
 type GraphqlEntity struct {
-	Group string `json:"group,omitempty" yaml:"group,omitempty"`
-	Kind  string `json:"kind,omitempty" yaml:"kind,omitempty"`
-	Query string `json:"query,omitempty" yaml:"query,omitempty"`
+	Group   string `json:"group,omitempty" yaml:"group,omitempty"`
+	Kind    string `json:"kind,omitempty" yaml:"kind,omitempty"`
+	Query   string `json:"query,omitempty" yaml:"query,omitempty"`
 	Version string `json:"version,omitempty" yaml:"version,omitempty"`
 }
 
