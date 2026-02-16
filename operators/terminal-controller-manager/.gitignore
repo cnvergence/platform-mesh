@@ -1,0 +1,22 @@
+# IDE
+.idea/
+.vscode/
+
+# Claude Code
+.claude/
+CLAUDE.local.md
+
+# Go
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+go.work
+
+# Build
+dist/
