@@ -78,6 +78,7 @@ func (l *LifecycleManager) Spreader() api.SpreadManager {
 func (l *LifecycleManager) Reconcile(ctx context.Context, req ctrl.Request, instance runtimeobject.RuntimeObject) (ctrl.Result, error) {
 	return lifecycle.Reconcile(ctx, req.NamespacedName, instance, l.client, l)
 }
+
 func (l *LifecycleManager) SetupWithManagerBuilder(mgr ctrl.Manager, maxReconciles int, reconcilerName string, instance runtimeobject.RuntimeObject, debugLabelValue string, log *logger.Logger, eventPredicates ...predicate.Predicate) (*builder.Builder, error) {
 	if err := lifecycle.ValidateInterfaces(instance, log, l); err != nil {
 		return nil, err
@@ -140,7 +141,7 @@ func (l *LifecycleManager) WithConditionManagement() *LifecycleManager {
 func (l *LifecycleManager) WithStaticThenExponentialRateLimiter(opts ...ratelimiter.Option) *LifecycleManager {
 	rateLimiter, err := ratelimiter.NewStaticThenExponentialRateLimiter[reconcile.Request](ratelimiter.NewConfig(opts...))
 	if err != nil {
-		log.Fatalf("rate limiter config error: %s",err)
+		log.Fatalf("rate limiter config error: %s", err)
 	}
 	l.rateLimiter = rateLimiter
 	return l

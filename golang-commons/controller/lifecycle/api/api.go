@@ -21,6 +21,14 @@ type Lifecycle interface {
 	Subroutines() []subroutine.Subroutine
 }
 
+type InitializingLifecycle interface {
+	Initializer() string
+}
+
+type TerminatingLifecycle interface {
+	Terminator() string
+}
+
 type PrepareContextFunc func(ctx context.Context, instance runtimeobject.RuntimeObject) (context.Context, errors.OperatorError)
 
 type Config struct {
