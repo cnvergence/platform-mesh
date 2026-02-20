@@ -16,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
 
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/api"
 	"github.com/platform-mesh/golang-commons/controller/lifecycle/runtimeobject"
@@ -34,6 +35,10 @@ func Reconcile(ctx context.Context, nName types.NamespacedName, instance runtime
 	reconcileId := uuid.New().String()
 
 	log := l.Log().MustChildLoggerWithAttributes("name", nName.Name, "namespace", nName.Namespace, "reconcile_id", reconcileId)
+	cluster, ok := mccontext.ClusterFrom(ctx)
+	if ok {
+		log = log.MustChildLoggerWithAttributes("cluster", cluster)
+	}
 	sentryTags := sentry.Tags{"namespace": nName.Namespace, "name": nName.Name}
 
 	ctx = logger.SetLoggerInContext(ctx, log)
