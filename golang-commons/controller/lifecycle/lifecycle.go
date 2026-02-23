@@ -76,7 +76,7 @@ func Reconcile(ctx context.Context, nName types.NamespacedName, instance runtime
 	var condArr []v1.Condition
 	if l.ConditionsManager() != nil {
 		condArr = util.MustToInterface[api.RuntimeObjectConditions](instance, log).GetConditions()
-		l.ConditionsManager().SetInstanceConditionUnknownIfNotSet(&condArr)
+		l.ConditionsManager().SetInstanceConditionUnknownIfNotSet(&condArr, instance.GetGeneration())
 	}
 
 	if l.PrepareContextFunc() != nil {
@@ -97,7 +97,7 @@ func Reconcile(ctx context.Context, nName types.NamespacedName, instance runtime
 	// Continue with reconciliation
 	for _, s := range subroutines {
 		if l.ConditionsManager() != nil {
-			l.ConditionsManager().SetSubroutineConditionToUnknownIfNotSet(&condArr, s, inDeletion, log)
+			l.ConditionsManager().SetSubroutineConditionToUnknownIfNotSet(&condArr, instance.GetGeneration(), s, inDeletion, log)
 		}
 
 		// Set current condArr before reconciling the s
@@ -111,8 +111,8 @@ func Reconcile(ctx context.Context, nName types.NamespacedName, instance runtime
 		}
 		if err != nil {
 			if l.ConditionsManager() != nil {
-				l.ConditionsManager().SetSubroutineCondition(&condArr, s, result, err, inDeletion, log)
-				l.ConditionsManager().SetInstanceConditionReady(&condArr, v1.ConditionFalse)
+				l.ConditionsManager().SetSubroutineCondition(&condArr, instance.GetGeneration(), s, result, err, inDeletion, log)
+				l.ConditionsManager().SetInstanceConditionReady(&condArr, instance.GetGeneration(), v1.ConditionFalse)
 				util.MustToInterface[api.RuntimeObjectConditions](instance, log).SetConditions(condArr)
 			}
 			if !retry {
@@ -133,7 +133,7 @@ func Reconcile(ctx context.Context, nName types.NamespacedName, instance runtime
 		}
 		if l.ConditionsManager() != nil {
 			if subResult.RequeueAfter == 0 {
-				l.ConditionsManager().SetSubroutineCondition(&condArr, s, subResult, err, inDeletion, log)
+				l.ConditionsManager().SetSubroutineCondition(&condArr, instance.GetGeneration(), s, subResult, err, inDeletion, log)
 			}
 		}
 	}
@@ -143,7 +143,7 @@ func Reconcile(ctx context.Context, nName types.NamespacedName, instance runtime
 		MarkResourceAsFinal(instance, log, condArr, v1.ConditionTrue, l)
 	} else {
 		if l.ConditionsManager() != nil {
-			l.ConditionsManager().SetInstanceConditionReady(&condArr, v1.ConditionFalse)
+			l.ConditionsManager().SetInstanceConditionReady(&condArr, instance.GetGeneration(), v1.ConditionFalse)
 		}
 	}
 
@@ -414,7 +414,7 @@ func MarkResourceAsFinal(instance runtimeobject.RuntimeObject, log *logger.Logge
 	}
 
 	if l.ConditionsManager() != nil {
-		l.ConditionsManager().SetInstanceConditionReady(&conditions, status)
+		l.ConditionsManager().SetInstanceConditionReady(&conditions, instance.GetGeneration(), status)
 	}
 }
 

@@ -105,38 +105,42 @@ func (t TestSpreader) UpdateObservedGeneration(instanceStatusObj api.RuntimeObje
 
 type TestConditionManager struct{}
 
-func (t TestConditionManager) SetInstanceConditionUnknownIfNotSet(conditions *[]metav1.Condition) bool {
+func (t TestConditionManager) SetInstanceConditionUnknownIfNotSet(conditions *[]metav1.Condition, _ int64) bool {
 	return meta.SetStatusCondition(conditions, metav1.Condition{
-		Type:    "Ready",
-		Status:  metav1.ConditionUnknown,
-		Message: "The resource is in an unknown state",
-		Reason:  "Unknown",
+		Type:               "Ready",
+		Status:             metav1.ConditionUnknown,
+		Message:            "The resource is in an unknown state",
+		Reason:             "Unknown",
+		ObservedGeneration: 0,
 	})
 }
 
-func (t TestConditionManager) SetSubroutineConditionToUnknownIfNotSet(conditions *[]metav1.Condition, subroutine subroutine.Subroutine, _ bool, _ *logger.Logger) bool {
+func (t TestConditionManager) SetSubroutineConditionToUnknownIfNotSet(conditions *[]metav1.Condition, _ int64, subroutine subroutine.Subroutine, _ bool, _ *logger.Logger) bool {
 	return meta.SetStatusCondition(conditions, metav1.Condition{
-		Type:    fmt.Sprintf("%s_Ready", subroutine.GetName()),
-		Status:  metav1.ConditionUnknown,
-		Message: "The resource is in an unknown state",
-		Reason:  "Unknown",
+		Type:               fmt.Sprintf("%s_Ready", subroutine.GetName()),
+		Status:             metav1.ConditionUnknown,
+		Message:            "The resource is in an unknown state",
+		Reason:             "Unknown",
+		ObservedGeneration: 0,
 	})
 }
 
-func (t TestConditionManager) SetSubroutineCondition(conditions *[]metav1.Condition, subroutine subroutine.Subroutine, _ ctrl.Result, _ error, _ bool, _ *logger.Logger) bool {
+func (t TestConditionManager) SetSubroutineCondition(conditions *[]metav1.Condition, _ int64, subroutine subroutine.Subroutine, _ ctrl.Result, _ error, _ bool, _ *logger.Logger) bool {
 	return meta.SetStatusCondition(conditions, metav1.Condition{
-		Type:    fmt.Sprintf("%s_Ready", subroutine.GetName()),
-		Status:  metav1.ConditionTrue,
-		Message: "The subroutine is complete",
-		Reason:  "ok",
+		Type:               fmt.Sprintf("%s_Ready", subroutine.GetName()),
+		Status:             metav1.ConditionTrue,
+		Message:            "The subroutine is complete",
+		Reason:             "ok",
+		ObservedGeneration: 0,
 	})
 }
 
-func (t TestConditionManager) SetInstanceConditionReady(conditions *[]metav1.Condition, _ metav1.ConditionStatus) bool {
+func (t TestConditionManager) SetInstanceConditionReady(conditions *[]metav1.Condition, _ int64, _ metav1.ConditionStatus) bool {
 	return meta.SetStatusCondition(conditions, metav1.Condition{
-		Type:    "Ready",
-		Status:  metav1.ConditionTrue,
-		Message: "The resource is ready",
-		Reason:  "ok",
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Message:            "The resource is ready",
+		Reason:             "ok",
+		ObservedGeneration: 0,
 	})
 }

@@ -23,7 +23,7 @@ func TestSetReady(t *testing.T) {
 		condition := []metav1.Condition{}
 		cm := NewConditionManager()
 		// When
-		cm.SetInstanceConditionReady(&condition, metav1.ConditionTrue)
+		cm.SetInstanceConditionReady(&condition, 0, metav1.ConditionTrue)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -38,11 +38,25 @@ func TestSetReady(t *testing.T) {
 		}
 
 		// When
-		cm.SetInstanceConditionReady(&condition, metav1.ConditionTrue)
+		cm.SetInstanceConditionReady(&condition, 0, metav1.ConditionTrue)
 
 		// Then
 		assert.Equal(t, 2, len(condition))
 		assert.Equal(t, metav1.ConditionTrue, condition[1].Status)
+	})
+
+	t.Run("TestSetReady sets ObservedGeneration", func(t *testing.T) {
+		// Given
+		cm := NewConditionManager()
+		condition := []metav1.Condition{}
+		observedGen := int64(1337)
+
+		// When
+		cm.SetInstanceConditionReady(&condition, observedGen, metav1.ConditionTrue)
+
+		// Then
+		assert.Equal(t, 1, len(condition))
+		assert.Equal(t, observedGen, condition[0].ObservedGeneration)
 	})
 }
 
@@ -54,7 +68,7 @@ func TestSetUnknown(t *testing.T) {
 		condition := []metav1.Condition{}
 
 		// When
-		cm.SetInstanceConditionUnknownIfNotSet(&condition)
+		cm.SetInstanceConditionUnknownIfNotSet(&condition, 0)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -69,7 +83,7 @@ func TestSetUnknown(t *testing.T) {
 		}
 
 		// When
-		cm.SetInstanceConditionUnknownIfNotSet(&condition)
+		cm.SetInstanceConditionUnknownIfNotSet(&condition, 0)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -104,7 +118,7 @@ func TestSetSubroutineConditionToUnknownIfNotSet(t *testing.T) {
 			cm := NewConditionManager()
 
 			// When
-			cm.SetSubroutineConditionToUnknownIfNotSet(&condition, pmtesting.ChangeStatusSubroutine{}, tt.IsFinalize, log)
+			cm.SetSubroutineConditionToUnknownIfNotSet(&condition, 0, pmtesting.ChangeStatusSubroutine{}, tt.IsFinalize, log)
 
 			// Then
 			assert.Equal(t, 1, len(condition))
@@ -121,7 +135,7 @@ func TestSetSubroutineConditionToUnknownIfNotSet(t *testing.T) {
 		}
 
 		// When
-		cm.SetSubroutineConditionToUnknownIfNotSet(&condition, pmtesting.ChangeStatusSubroutine{}, false, log)
+		cm.SetSubroutineConditionToUnknownIfNotSet(&condition, 0, pmtesting.ChangeStatusSubroutine{}, false, log)
 
 		// Then
 		assert.Equal(t, 2, len(condition))
@@ -138,7 +152,7 @@ func TestSetSubroutineConditionToUnknownIfNotSet(t *testing.T) {
 		}
 
 		// When
-		cm.SetSubroutineConditionToUnknownIfNotSet(&condition, subroutine, false, log)
+		cm.SetSubroutineConditionToUnknownIfNotSet(&condition, 0, subroutine, false, log)
 
 		// Then
 		assert.Equal(t, 2, len(condition))
@@ -158,7 +172,7 @@ func TestSubroutineCondition(t *testing.T) {
 		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, nil, false, log)
+		cm.SetSubroutineCondition(&condition, 0, subroutine, controllerruntime.Result{}, nil, false, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -173,7 +187,7 @@ func TestSubroutineCondition(t *testing.T) {
 		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{RequeueAfter: 1 * time.Second}, nil, false, log)
+		cm.SetSubroutineCondition(&condition, 0, subroutine, controllerruntime.Result{RequeueAfter: 1 * time.Second}, nil, false, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -188,7 +202,7 @@ func TestSubroutineCondition(t *testing.T) {
 		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, errors.New("failed"), false, log)
+		cm.SetSubroutineCondition(&condition, 0, subroutine, controllerruntime.Result{}, errors.New("failed"), false, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -203,7 +217,7 @@ func TestSubroutineCondition(t *testing.T) {
 		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, nil, true, log)
+		cm.SetSubroutineCondition(&condition, 0, subroutine, controllerruntime.Result{}, nil, true, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -218,7 +232,7 @@ func TestSubroutineCondition(t *testing.T) {
 		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{RequeueAfter: 1 * time.Second}, nil, true, log)
+		cm.SetSubroutineCondition(&condition, 0, subroutine, controllerruntime.Result{RequeueAfter: 1 * time.Second}, nil, true, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
@@ -233,7 +247,7 @@ func TestSubroutineCondition(t *testing.T) {
 		subroutine := pmtesting.ChangeStatusSubroutine{}
 
 		// When
-		cm.SetSubroutineCondition(&condition, subroutine, controllerruntime.Result{}, errors.New("failed"), true, log)
+		cm.SetSubroutineCondition(&condition, 0, subroutine, controllerruntime.Result{}, errors.New("failed"), true, log)
 
 		// Then
 		assert.Equal(t, 1, len(condition))
