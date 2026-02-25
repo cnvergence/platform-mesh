@@ -224,7 +224,7 @@ func reconcileSubroutine(ctx context.Context, instance runtimeobject.RuntimeObje
 			}
 			subroutineLogger.Error().Err(err.Err()).Bool("retry", err.Retry()).Msg("initializer ended with error")
 		}
-	} else {
+	} else if instance.GetDeletionTimestamp() == nil {
 		subroutineLogger.Debug().Msg("processing instance")
 		result, err = s.Process(ctx, instance)
 		subroutineLogger.Debug().Any("result", result).Msg("processed instance")
