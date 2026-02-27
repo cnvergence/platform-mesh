@@ -9,22 +9,92 @@ on:
       - synchronize
 
 jobs:
-  pipe:
+  auto-labeler:
+    if: ${{ (github.head_ref || github.ref) != 'refs/heads/main' && github.event.pull_request.head.repo.full_name == github.repository }}
+    uses: platform-mesh/.github/.github/workflows/job-auto-labeler.yml@main
+    secrets: inherit
+
+  createVersion:
+    if: ${{ (github.head_ref || github.ref) == 'refs/heads/main' }}
+    uses: platform-mesh/.github/.github/workflows/job-create-version.yml@main
+    secrets: inherit
+
+  lint:
     concurrency:
-      group: ${{ github.ref }}-controller
+      group: ${{ github.ref }}-lint
       cancel-in-progress: true
-    uses: platform-mesh/.github/.github/workflows/pipeline-golang-app.yml@main
+    uses: platform-mesh/.github/.github/workflows/job-golang-lint.yml@main
+    secrets: inherit
+    with:
+      useTask: true
+
+  testSource:
+    concurrency:
+      group: ${{ github.ref }}-test
+      cancel-in-progress: true
+    uses: platform-mesh/.github/.github/workflows/job-golang-test-source.yml@main
+    secrets: inherit
+    with:
+      useTask: true
+      useLocalCoverageConfig: true
+
+  dockerBuild:
+    if: ${{ (github.head_ref || github.ref) != 'refs/heads/main' }}
+    uses: platform-mesh/.github/.github/workflows/job-docker-build-push.yml@main
     secrets: inherit
     with:
       imageTagName: ghcr.io/platform-mesh/terminal-controller-manager
-      useTask: true
-      useLocalCoverageConfig: true
-      repoVersionUpdate: platform-mesh/helm-charts
-      coverageThresholdTotal: 0
+      multiarch: false
 
-  terminal-image:
+  dockerBuildAndPush:
+    if: ${{ (github.head_ref || github.ref) == 'refs/heads/main' }}
+    needs: [createVersion, lint, testSource]
+    uses: platform-mesh/.github/.github/workflows/job-docker-build-push.yml@main
+    secrets: inherit
+    with:
+      imageTagName: ghcr.io/platform-mesh/terminal-controller-manager
+      version: ${{ needs.createVersion.outputs.version }}
+      multiarch: true
+
+  updateVersion:
+    if: ${{ (github.head_ref || github.ref) == 'refs/heads/main' }}
+    needs: [createVersion, dockerBuildAndPush]
+    uses: platform-mesh/.github/.github/workflows/job-chart-version-update.yml@main
+    secrets: inherit
+    with:
+      chart: terminal-controller-manager
+      appVersion: ${{ needs.createVersion.outputs.version }}
+      targetRepository: platform-mesh/helm-charts
+
+  terminalImageBuild:
     name: Build Terminal Image
+    if: ${{ (github.head_ref || github.ref) != 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: ${{ github.ref }}-terminal
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: images/terminal
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  terminalImageBuildAndPush:
+    name: Build and Push Terminal Image
+    if: ${{ (github.head_ref || github.ref) == 'refs/heads/main' }}
+    needs: [createVersion]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     concurrency:
       group: ${{ github.ref }}-terminal
       cancel-in-progress: true
@@ -39,7 +109,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -53,13 +122,14 @@ jobs:
           images: ghcr.io/platform-mesh/terminal
           tags: |
             type=sha,prefix=
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest
+            type=raw,value=${{ needs.createVersion.outputs.version }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: images/terminal
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
