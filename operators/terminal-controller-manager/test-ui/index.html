@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal Controller Test UI</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        h1 {
+            margin: 0 0 20px 0;
+            font-size: 1.5rem;
+            color: #fff;
+        }
+        .config-panel {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #b0b0b0;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #0078d4;
+        }
+        textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        button.primary {
+            background: #0078d4;
+            color: white;
+        }
+        button.primary:hover {
+            background: #006cbd;
+        }
+        button.primary:disabled {
+            background: #444;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #444;
+            color: #e0e0e0;
+        }
+        button.secondary:hover {
+            background: #555;
+        }
+        button.danger {
+            background: #d32f2f;
+            color: white;
+        }
+        button.danger:hover {
+            background: #b71c1c;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        .status.connected {
+            background: #1b5e20;
+            color: #a5d6a7;
+        }
+        .status.disconnected {
+            background: #b71c1c;
+            color: #ef9a9a;
+        }
+        .status.connecting {
+            background: #f57c00;
+            color: #ffe0b2;
+        }
+        .terminal-container {
+            background: #000;
+            border-radius: 8px;
+            padding: 10px;
+            min-height: 400px;
+        }
+        #terminal {
+            height: 400px;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #888;
+            margin-top: 5px;
+        }
+        .inline-group {
+            display: flex;
+            gap: 15px;
+        }
+        .inline-group .form-group {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <h1>Terminal Controller Test UI</h1>
+
+    <div class="config-panel">
+        <div class="inline-group">
+            <div class="form-group">
+                <label for="wsUrl">WebSocket URL</label>
+                <input type="text" id="wsUrl" value="ws://localhost:8080/ws/test-terminal" placeholder="ws://localhost:8080/ws/{terminal-name}">
+                <div class="help-text">Controller WebSocket endpoint. Use port-forward: kubectl port-forward svc/terminal-controller 8080:8080 -n platform-mesh-system</div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="token">OIDC Token</label>
+            <textarea id="token" placeholder="Paste your OIDC token here (from Keycloak)"></textarea>
+            <div class="help-text">Get token from browser DevTools (Application > Local Storage) or use: curl -X POST ... to get a token</div>
+        </div>
+
+        <div id="status" class="status disconnected">Disconnected</div>
+
+        <div class="button-group">
+            <button id="connectBtn" class="primary" onclick="connect()">Connect</button>
+            <button id="disconnectBtn" class="secondary" onclick="disconnect()" disabled>Disconnect</button>
+            <button class="secondary" onclick="clearTerminal()">Clear Terminal</button>
+        </div>
+    </div>
+
+    <div class="terminal-container">
+        <div id="terminal"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
+    <script>
+        let ws = null;
+        let term = null;
+        let fitAddon = null;
+        let tokenSent = false;
+
+        // Initialize terminal
+        function initTerminal() {
+            term = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                theme: {
+                    background: '#000000',
+                    foreground: '#e0e0e0',
+                    cursor: '#ffffff',
+                    selection: '#444444'
+                }
+            });
+
+            fitAddon = new FitAddon.FitAddon();
+            const webLinksAddon = new WebLinksAddon.WebLinksAddon();
+
+            term.loadAddon(fitAddon);
+            term.loadAddon(webLinksAddon);
+
+            term.open(document.getElementById('terminal'));
+            fitAddon.fit();
+
+            // Handle terminal input
+            term.onData(data => {
+                if (ws && ws.readyState === WebSocket.OPEN && tokenSent) {
+                    ws.send(data);
+                }
+            });
+
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                if (fitAddon) {
+                    fitAddon.fit();
+                }
+            });
+
+            term.writeln('Terminal Controller Test UI');
+            term.writeln('---------------------------');
+            term.writeln('1. Enter WebSocket URL (use kubectl port-forward to expose the controller)');
+            term.writeln('2. Paste your OIDC token');
+            term.writeln('3. Click Connect');
+            term.writeln('');
+        }
+
+        function setStatus(status, message) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = 'status ' + status;
+            statusEl.textContent = message;
+        }
+
+        function connect() {
+            const wsUrl = document.getElementById('wsUrl').value.trim();
+            const token = document.getElementById('token').value.trim();
+
+            if (!wsUrl) {
+                alert('Please enter a WebSocket URL');
+                return;
+            }
+
+            if (!token) {
+                alert('Please enter an OIDC token');
+                return;
+            }
+
+            tokenSent = false;
+            setStatus('connecting', 'Connecting...');
+            document.getElementById('connectBtn').disabled = true;
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    setStatus('connecting', 'Connected, sending token...');
+                    term.writeln('\r\n[Connected to ' + wsUrl + ']');
+                    term.writeln('[Sending token...]');
+
+                    // Send token as first message
+                    ws.send(token);
+                    tokenSent = true;
+
+                    setStatus('connected', 'Connected');
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                    term.writeln('[Token sent, waiting for shell...]\r\n');
+                };
+
+                ws.onmessage = (event) => {
+                    // Write received data to terminal
+                    if (event.data instanceof Blob) {
+                        event.data.text().then(text => term.write(text));
+                    } else {
+                        term.write(event.data);
+                    }
+                };
+
+                ws.onclose = (event) => {
+                    setStatus('disconnected', 'Disconnected: ' + (event.reason || 'Connection closed'));
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                    term.writeln('\r\n[Disconnected]');
+                    tokenSent = false;
+                };
+
+                ws.onerror = (error) => {
+                    setStatus('disconnected', 'Connection error');
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                    term.writeln('\r\n[Connection error]');
+                    console.error('WebSocket error:', error);
+                    tokenSent = false;
+                };
+
+            } catch (error) {
+                setStatus('disconnected', 'Failed to connect: ' + error.message);
+                document.getElementById('connectBtn').disabled = false;
+                console.error('Connection error:', error);
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            tokenSent = false;
+        }
+
+        function clearTerminal() {
+            if (term) {
+                term.clear();
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initTerminal);
+    </script>
+</body>
+</html>

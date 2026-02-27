@@ -1,0 +1,8 @@
+apiVersion: terminal.platform-mesh.io/v1alpha1
+kind: Terminal
+metadata:
+  name: my-terminal
+  annotations:
+    kcp.io/user-info: bastian.echterhoelter@sap.com
+spec:
+  createdBy: bastian.echterhoelter@sap.com

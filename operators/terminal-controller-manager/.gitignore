@@ -1,7 +1,7 @@
 # IDE
 .idea/
 .vscode/
-
+.run/
 # Claude Code
 .claude/
 CLAUDE.local.md
@@ -20,3 +20,29 @@ go.work
 
 # Build
 dist/
+certs/
+Dockerfile.cross
+
+# Environment
+.secret
+.env
+.taskenv
+.kcp/
+
+# Coverage
+cover.out
+coverage.html
+
+# Test artifacts
+kcp.log
+
+# Cache
+.gocache/
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~

@@ -1,0 +1,6 @@
+exclude:
+  paths:
+    - api/v1alpha1 # skipping generated files and crd type definitions
+    - main\.go$ # skip covering main.go
+    - ^cmd # skip covering cmd directory
+    - ^internal/config # skip covering config structs
