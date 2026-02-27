@@ -731,6 +731,7 @@ func (r *PodSubroutine) Finalize(ctx context.Context, ro runtimeobject.RuntimeOb
 
 ## References
 
+- [RFC 002: Terminal Controller Manager](https://github.com/platform-mesh/architecture/pull/8) - Architecture RFC for this project
 - [Gardener terminal-controller-manager](https://github.com/gardener/terminal-controller-manager)
 - [ttyd - Share your terminal over the web](https://github.com/tsl0922/ttyd)
 - [xterm.js](https://xtermjs.org/)
