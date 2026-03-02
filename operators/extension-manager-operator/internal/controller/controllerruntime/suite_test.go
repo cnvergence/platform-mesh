@@ -99,8 +99,7 @@ func (suite *ContentConfigurationControllerTestSuite) SetupSuite() {
 	suite.Nil(err)
 
 	defaultConfig := &platformmeshconfig.CommonServiceConfig{}
-	appCfg := config.OperatorConfig{}
-	appCfg.Subroutines.ContentConfiguration.Enabled = true
+	appCfg := *config.NewOperatorConfig()
 
 	contentConfigurationReconciler := NewContentConfigurationReconcilerCR(log, suite.kubernetesManager, appCfg)
 	err = contentConfigurationReconciler.SetupWithManager(suite.kubernetesManager, defaultConfig, log)

@@ -56,7 +56,7 @@ func (r *ContentConfigurationSubroutine) Finalize(_ context.Context, _ runtimeob
 	return ctrl.Result{}, nil
 }
 
-func (r *ContentConfigurationSubroutine) Finalizers() []string {
+func (r *ContentConfigurationSubroutine) Finalizers(_ runtimeobject.RuntimeObject) []string {
 	return []string{}
 }
 

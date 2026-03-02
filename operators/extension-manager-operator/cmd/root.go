@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -25,10 +25,9 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 
-	operatorCfg config.OperatorConfig
-	serverCfg   config.ServerConfig
+	operatorCfg *config.OperatorConfig
+	serverCfg   *config.ServerConfig
 	defaultCfg  *platformmeshconfig.CommonServiceConfig
-	v           *viper.Viper
 	log         *logger.Logger
 )
 
@@ -46,53 +45,18 @@ func init() { // coverage-ignore
 	utilruntime.Must(corev1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 
+	defaultCfg = platformmeshconfig.NewDefaultConfig()
+	operatorCfg = config.NewOperatorConfig()
+	serverCfg = config.NewServerConfig()
+
 	rootCmd.AddCommand(operatorCmd)
 	rootCmd.AddCommand(serverCmd)
 
-	cobra.OnInitialize(initConfig, initLog)
+	defaultCfg.AddFlags(rootCmd.PersistentFlags())
+	operatorCfg.AddFlags(operatorCmd.Flags())
+	serverCfg.AddFlags(serverCmd.Flags())
 
-	var err error
-	v, defaultCfg, err = platformmeshconfig.NewDefaultConfig(rootCmd)
-	if err != nil {
-		setupLog.Error(err, "Failed to create config")
-		os.Exit(1)
-	}
-
-	err = platformmeshconfig.BindConfigToFlags(v, operatorCmd, &operatorCfg)
-	if err != nil {
-		setupLog.Error(err, "Failed to bind config to flags")
-		os.Exit(1)
-	}
-	err = platformmeshconfig.BindConfigToFlags(v, serverCmd, &serverCfg)
-	if err != nil {
-		setupLog.Error(err, "Failed to bind config to flags")
-		os.Exit(1)
-	}
-
-}
-
-func initConfig() {
-
-	v.SetDefault("is-local", false)
-	v.SetDefault("server-port", "8088")
-
-	// Parse environment variables into the Config struct
-	if err := v.Unmarshal(&defaultCfg); err != nil {
-		setupLog.Error(err, "Unable to decode into struct")
-		os.Exit(1)
-	}
-
-	// Parse environment variables into the Config struct
-	if err := v.Unmarshal(&operatorCfg); err != nil {
-		setupLog.Error(err, "Unable to decode into struct")
-		os.Exit(1)
-	}
-
-	// Parse environment variables into the Config struct
-	if err := v.Unmarshal(&serverCfg); err != nil {
-		setupLog.Error(err, "Unable to decode into struct")
-		os.Exit(1)
-	}
+	cobra.OnInitialize(initLog)
 }
 
 func initLog() { // coverage-ignore

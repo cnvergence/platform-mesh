@@ -46,7 +46,7 @@ type ContentConfigurationReconciler struct {
 
 func NewContentConfigurationReconciler(log *logger.Logger, mgr mcmanager.Manager, cfg config.OperatorConfig) *ContentConfigurationReconciler {
 	var subs []subroutine.Subroutine
-	if cfg.Subroutines.ContentConfiguration.Enabled {
+	if cfg.SubroutinesContentConfigurationEnabled {
 		subs = append(subs, subroutines.NewContentConfigurationSubroutine(validation.NewContentConfiguration(), http.DefaultClient))
 	}
 	return &ContentConfigurationReconciler{

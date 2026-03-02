@@ -69,7 +69,7 @@ func RunServer(_ *cobra.Command, _ []string) { // coverage-ignore
 	metricsHandler := promhttp.Handler()
 
 	// Register Prometheus metrics endpoint
-	rt := server.CreateRouter(serverCfg, log, validation.NewContentConfiguration())
+	rt := server.CreateRouter(defaultCfg.IsLocal, log, validation.NewContentConfiguration())
 	rt.Handle("/metrics", metricsHandler)
 
 	srv := &http.Server{

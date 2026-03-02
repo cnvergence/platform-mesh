@@ -163,8 +163,7 @@ func (suite *ContentConfigurationTestSuite) SetupSuite() {
 	mgr, err := mcmanager.New(providerConfig, provider, mcmanager.Options{Logger: log.Logr()})
 	suite.Require().NoError(err, "failed to create multicluster manager")
 
-	operatorCfg := config.OperatorConfig{}
-	operatorCfg.Subroutines.ContentConfiguration.Enabled = true
+	operatorCfg := *config.NewOperatorConfig()
 	rec := NewContentConfigurationReconciler(log, mgr, operatorCfg)
 
 	err = rec.SetupWithManager(mgr, &platformmeshconfig.CommonServiceConfig{}, log)

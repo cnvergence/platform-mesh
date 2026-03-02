@@ -92,17 +92,17 @@ func RunController(_ *cobra.Command, _ []string) { // coverage-ignore
 		return otelhttp.NewTransport(rt)
 	})
 
-	if operatorCfg.KCP.Enabled {
+	if operatorCfg.KCPEnabled {
 		log.Info().Msg("KCP mode enabled, initializing multicluster manager")
 		// Leader election: same as account-operator and security-operator — use in-cluster config for the lease; Fatal if not in cluster.
 		var leaderElectionCfg *rest.Config
-		if defaultCfg.LeaderElection.Enabled {
+		if defaultCfg.LeaderElectionEnabled {
 			leaderElectionCfg, err = rest.InClusterConfig()
 			if err != nil {
 				log.Fatal().Err(err).Msg("unable to get in-cluster config for leader election")
 			}
 		}
-		initializeMultiClusterManager(ctx, leaderElectionCfg, restCfg, log, operatorCfg)
+		initializeMultiClusterManager(ctx, leaderElectionCfg, restCfg, log, *operatorCfg)
 	} else {
 		log.Info().Msg("KCP mode disabled, using standard controller-runtime manager")
 		initializeControllerRuntimeManager(ctx, restCfg)
@@ -115,7 +115,7 @@ func initializeMultiClusterManager(ctx context.Context, leaderElectionCfg *rest.
 		return otelhttp.NewTransport(rt)
 	})
 
-	endpointSliceName := operatorCfg.KCP.APIExportEndpointSliceName
+	endpointSliceName := operatorCfg.KCPAPIExportEndpointSliceName
 	provider, err := apiexport.New(kcpCfg, endpointSliceName, apiexport.Options{
 		Scheme: scheme,
 	})
@@ -134,7 +134,7 @@ func initializeMultiClusterManager(ctx context.Context, leaderElectionCfg *rest.
 		},
 		BaseContext:                   func() context.Context { return ctx },
 		HealthProbeBindAddress:        defaultCfg.HealthProbeBindAddress,
-		LeaderElection:                defaultCfg.LeaderElection.Enabled,
+		LeaderElection:                defaultCfg.LeaderElectionEnabled,
 		LeaderElectionID:              "eengiex3.platform-mesh.io",
 		LeaderElectionReleaseOnCancel: true,
 		LeaderElectionConfig:          leaderElectionCfg,
@@ -177,7 +177,7 @@ func initializeControllerRuntimeManager(ctx context.Context, restCfg *rest.Confi
 		},
 		BaseContext:                   func() context.Context { return ctx },
 		HealthProbeBindAddress:        defaultCfg.HealthProbeBindAddress,
-		LeaderElection:                defaultCfg.LeaderElection.Enabled,
+		LeaderElection:                defaultCfg.LeaderElectionEnabled,
 		LeaderElectionID:              "eengiex4.platform-mesh.io",
 		LeaderElectionReleaseOnCancel: true,
 	})
@@ -185,7 +185,7 @@ func initializeControllerRuntimeManager(ctx context.Context, restCfg *rest.Confi
 		log.Fatal().Err(err).Msg("unable to start manager")
 	}
 
-	contentConfigurationReconciler := controllerruntime.NewContentConfigurationReconcilerCR(log, mgr, operatorCfg)
+	contentConfigurationReconciler := controllerruntime.NewContentConfigurationReconcilerCR(log, mgr, *operatorCfg)
 	if err := contentConfigurationReconciler.SetupWithManager(mgr, defaultCfg, log); err != nil {
 		log.Fatal().Err(err).Str("controller", "ContentConfiguration").Msg("unable to create controller")
 	}

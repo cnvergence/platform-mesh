@@ -267,7 +267,7 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestFinalizers_OK() {
 	suite.Nil(err)
 
 	// When
-	finalizers := suite.testObj.Finalizers()
+	finalizers := suite.testObj.Finalizers(contentConfiguration)
 
 	// Then
 	suite.Equal([]string{}, finalizers)

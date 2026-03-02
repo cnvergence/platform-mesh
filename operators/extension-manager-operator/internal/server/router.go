@@ -8,18 +8,17 @@ import (
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/rs/cors"
 
-	"github.com/platform-mesh/extension-manager-operator/internal/config"
 	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
 )
 
 func CreateRouter(
-	appConfig config.ServerConfig,
+	isLocal bool,
 	log *logger.Logger,
 	validator validation.ExtensionConfiguration,
 ) *chi.Mux {
 	router := chi.NewRouter()
 
-	if appConfig.IsLocal {
+	if isLocal {
 		rl := requestLogger{
 			log: log,
 		}
