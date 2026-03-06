@@ -909,7 +909,7 @@ func TestLifecycle(t *testing.T) {
 
 func TestUpdateStatus(t *testing.T) {
 	clientMock := new(mocks.Client)
-	subresourceClient := new(mocks.SubResourceClient)
+	subresourceClient := new(mocks.SubResourceWriter)
 
 	logcfg := logger.DefaultConfig()
 	logcfg.NoJSON = true

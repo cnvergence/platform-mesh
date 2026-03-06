@@ -18,6 +18,7 @@ packages:
       dir: directive/mocks
       pkgname: mocks
       filename: mock_OpenFGAServiceClient.go
+      include-auto-generated: true
     interfaces:
       OpenFGAServiceClient:
         config:

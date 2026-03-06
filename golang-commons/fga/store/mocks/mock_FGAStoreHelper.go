@@ -70,16 +70,32 @@ type FGAStoreHelper_GetModelIDForTenant_Call struct {
 }
 
 // GetModelIDForTenant is a helper method to define mock.On call
-//   - ctx
-//   - conn
-//   - tenantID
+//   - ctx context.Context
+//   - conn openfgav1.OpenFGAServiceClient
+//   - tenantID string
 func (_e *FGAStoreHelper_Expecter) GetModelIDForTenant(ctx interface{}, conn interface{}, tenantID interface{}) *FGAStoreHelper_GetModelIDForTenant_Call {
 	return &FGAStoreHelper_GetModelIDForTenant_Call{Call: _e.mock.On("GetModelIDForTenant", ctx, conn, tenantID)}
 }
 
 func (_c *FGAStoreHelper_GetModelIDForTenant_Call) Run(run func(ctx context.Context, conn openfgav1.OpenFGAServiceClient, tenantID string)) *FGAStoreHelper_GetModelIDForTenant_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(openfgav1.OpenFGAServiceClient), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 openfgav1.OpenFGAServiceClient
+		if args[1] != nil {
+			arg1 = args[1].(openfgav1.OpenFGAServiceClient)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -126,16 +142,32 @@ type FGAStoreHelper_GetStoreIDForTenant_Call struct {
 }
 
 // GetStoreIDForTenant is a helper method to define mock.On call
-//   - ctx
-//   - conn
-//   - tenantID
+//   - ctx context.Context
+//   - conn openfgav1.OpenFGAServiceClient
+//   - tenantID string
 func (_e *FGAStoreHelper_Expecter) GetStoreIDForTenant(ctx interface{}, conn interface{}, tenantID interface{}) *FGAStoreHelper_GetStoreIDForTenant_Call {
 	return &FGAStoreHelper_GetStoreIDForTenant_Call{Call: _e.mock.On("GetStoreIDForTenant", ctx, conn, tenantID)}
 }
 
 func (_c *FGAStoreHelper_GetStoreIDForTenant_Call) Run(run func(ctx context.Context, conn openfgav1.OpenFGAServiceClient, tenantID string)) *FGAStoreHelper_GetStoreIDForTenant_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(openfgav1.OpenFGAServiceClient), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 openfgav1.OpenFGAServiceClient
+		if args[1] != nil {
+			arg1 = args[1].(openfgav1.OpenFGAServiceClient)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -173,14 +205,20 @@ type FGAStoreHelper_IsDuplicateWriteError_Call struct {
 }
 
 // IsDuplicateWriteError is a helper method to define mock.On call
-//   - err
+//   - err error
 func (_e *FGAStoreHelper_Expecter) IsDuplicateWriteError(err interface{}) *FGAStoreHelper_IsDuplicateWriteError_Call {
 	return &FGAStoreHelper_IsDuplicateWriteError_Call{Call: _e.mock.On("IsDuplicateWriteError", err)}
 }
 
 func (_c *FGAStoreHelper_IsDuplicateWriteError_Call) Run(run func(err error)) *FGAStoreHelper_IsDuplicateWriteError_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(error))
+		var arg0 error
+		if args[0] != nil {
+			arg0 = args[0].(error)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }
