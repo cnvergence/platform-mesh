@@ -1,5 +1,8 @@
 # Build stage for k9s (nexus49 fork with KCP support)
-FROM golang:1.24-alpine AS k9s-builder
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS k9s-builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN apk add --no-cache git make
 
@@ -8,10 +11,12 @@ ENV GOTOOLCHAIN=auto
 
 RUN git clone --depth 1 -b feat/kcp-support https://github.com/nexus49/k9s.git /tmp/k9s && \
     cd /tmp/k9s && \
-    make build
+    GOOS=${TARGETOS} GOARCH=${TARGETARCH} make build
 
 # Runtime stage
 FROM alpine:3.20
+
+ARG TARGETARCH
 
 # Install required tools including ttyd for WebSocket terminal
 RUN apk add --no-cache \
@@ -24,18 +29,18 @@ RUN apk add --no-cache \
 
 # Install kubectl
 RUN KUBECTL_VERSION=$(curl -Ls https://dl.k8s.io/release/stable.txt) && \
-    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" && \
+    curl -LO "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${TARGETARCH}/kubectl" && \
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/
 
 # Install kcp kubectl plugins (kcp, ws)
 RUN KCP_VERSION=$(curl -s https://api.github.com/repos/kcp-dev/kcp/releases/latest | jq -r '.tag_name') && \
-    curl -LO "https://github.com/kcp-dev/kcp/releases/download/${KCP_VERSION}/kubectl-kcp-plugin_${KCP_VERSION#v}_linux_amd64.tar.gz" && \
-    curl -LO "https://github.com/kcp-dev/kcp/releases/download/${KCP_VERSION}/kubectl-ws-plugin_${KCP_VERSION#v}_linux_amd64.tar.gz" && \
-    tar -xzf "kubectl-kcp-plugin_${KCP_VERSION#v}_linux_amd64.tar.gz" -C /tmp && \
-    tar -xzf "kubectl-ws-plugin_${KCP_VERSION#v}_linux_amd64.tar.gz" -C /tmp && \
+    curl -LO "https://github.com/kcp-dev/kcp/releases/download/${KCP_VERSION}/kubectl-kcp-plugin_${KCP_VERSION#v}_linux_${TARGETARCH}.tar.gz" && \
+    curl -LO "https://github.com/kcp-dev/kcp/releases/download/${KCP_VERSION}/kubectl-ws-plugin_${KCP_VERSION#v}_linux_${TARGETARCH}.tar.gz" && \
+    tar -xzf "kubectl-kcp-plugin_${KCP_VERSION#v}_linux_${TARGETARCH}.tar.gz" -C /tmp && \
+    tar -xzf "kubectl-ws-plugin_${KCP_VERSION#v}_linux_${TARGETARCH}.tar.gz" -C /tmp && \
     mv /tmp/bin/kubectl-kcp /tmp/bin/kubectl-ws /usr/local/bin/ && \
-    rm -rf "kubectl-kcp-plugin_${KCP_VERSION#v}_linux_amd64.tar.gz" "kubectl-ws-plugin_${KCP_VERSION#v}_linux_amd64.tar.gz" /tmp/bin
+    rm -rf "kubectl-kcp-plugin_${KCP_VERSION#v}_linux_${TARGETARCH}.tar.gz" "kubectl-ws-plugin_${KCP_VERSION#v}_linux_${TARGETARCH}.tar.gz" /tmp/bin
 
 # Copy k9s from builder
 COPY --from=k9s-builder /tmp/k9s/execs/k9s /usr/local/bin/k9s
