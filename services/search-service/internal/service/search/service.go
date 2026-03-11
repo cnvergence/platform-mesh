@@ -61,7 +61,7 @@ func NewService(
 func (s *Service) Search(ctx context.Context, req SearchRequest) (SearchResponse, error) {
 	start := time.Now()
 	s.metrics.IncSearchRequests()
-	defer s.metrics.ObserveSearchDuration(time.Since(start))
+	defer func() { s.metrics.ObserveSearchDuration(time.Since(start)) }()
 
 	log := logger.LoadLoggerFromContext(ctx)
 
@@ -143,11 +143,11 @@ outer:
 
 		for i, hit := range page.Hits {
 			totalScanned++
-			nextSearchAfter = hit.Sort
 
 			if totalScanned > s.cfg.MaxScannedHits {
 				break outer
 			}
+			nextSearchAfter = hit.Sort
 
 			if i >= len(authz.Allowed) || !authz.Allowed[i] {
 				continue
