@@ -1,0 +1,68 @@
+package kcp
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/platform-mesh/golang-commons/logger"
+	"k8s.io/client-go/rest"
+)
+
+type OrgAccessValidator struct {
+	http    *http.Client
+	baseURL *url.URL
+	log     *logger.Logger
+}
+
+func NewOrgAccessValidator(restCfg *rest.Config, log *logger.Logger) (*OrgAccessValidator, error) {
+	cfg := rest.CopyConfig(restCfg)
+	cfg.KeyData = nil
+	cfg.CertData = nil
+	cfg.KeyFile = ""
+	cfg.CertFile = ""
+
+	httpClient, err := rest.HTTPClientFor(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create KCP HTTP client: %w", err)
+	}
+
+	baseURL, err := url.Parse(cfg.Host)
+	if err != nil {
+		return nil, fmt.Errorf("parse KCP host URL: %w", err)
+	}
+	baseURL.Path = ""
+
+	return &OrgAccessValidator{http: httpClient, baseURL: baseURL, log: log}, nil
+}
+
+func (v *OrgAccessValidator) ValidateTokenForOrg(ctx context.Context, authHeader, org string) (bool, error) {
+	clusterPath := fmt.Sprintf("root:orgs:%s", org)
+	requestURL := fmt.Sprintf("%s://%s/clusters/%s/version", v.baseURL.Scheme, v.baseURL.Host, clusterPath)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, http.NoBody)
+	if err != nil {
+		return false, fmt.Errorf("create KCP auth request: %w", err)
+	}
+	req.Header.Set("Authorization", authHeader)
+
+	resp, err := v.http.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("execute KCP auth request: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated, http.StatusForbidden:
+		return true, nil
+	case http.StatusUnauthorized:
+		return false, nil
+	default:
+		if strings.HasPrefix(fmt.Sprintf("%d", resp.StatusCode), "5") {
+			return false, fmt.Errorf("kcp auth check failed with status %d", resp.StatusCode)
+		}
+		return false, nil
+	}
+}

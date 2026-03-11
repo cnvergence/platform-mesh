@@ -1,0 +1,169 @@
+package middleware
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	pmcontext "github.com/platform-mesh/golang-commons/context"
+	"github.com/platform-mesh/golang-commons/context/keys"
+	"github.com/platform-mesh/golang-commons/jwt"
+
+	appcontext "github.com/platform-mesh/search/internal/context"
+)
+
+type fakeOrgValidator struct {
+	allowed bool
+	err     error
+	org     string
+	auth    string
+}
+
+func (f *fakeOrgValidator) ValidateTokenForOrg(_ context.Context, authHeader, org string) (bool, error) {
+	f.org = org
+	f.auth = authHeader
+	return f.allowed, f.err
+}
+
+func TestSetRequestContextSuccessUsesMailFallbackToSub(t *testing.T) {
+	validator := &fakeOrgValidator{allowed: true}
+	mw := NewOrgContextMiddleware(validator)
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "acme.platform-mesh.io:8443"
+
+	ctx := pmcontext.AddAuthHeaderToContext(req.Context(), "Bearer abc")
+	ctx = context.WithValue(ctx, keys.WebTokenCtxKey, jwt.WebToken{
+		IssuerAttributes: jwt.IssuerAttributes{
+			Issuer:  "https://idp.example.org/auth/realms/acme-tenant",
+			Subject: "subject-user",
+		},
+		ParsedAttributes: jwt.ParsedAttributes{Mail: ""},
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc, err := appcontext.GetRequestContext(r.Context())
+		if err != nil {
+			t.Fatalf("request context missing: %v", err)
+		}
+		if rc.Organization != "acme" {
+			t.Fatalf("unexpected org: %s", rc.Organization)
+		}
+		if rc.User != "subject-user" {
+			t.Fatalf("expected subject fallback user, got %s", rc.User)
+		}
+		if rc.IDMTenant != "acme-tenant" {
+			t.Fatalf("unexpected tenant: %s", rc.IDMTenant)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mw.SetRequestContext()(next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
+	}
+	if validator.org != "acme" {
+		t.Fatalf("expected org acme in validator, got %s", validator.org)
+	}
+	if validator.auth != "Bearer abc" {
+		t.Fatalf("expected auth header passed to validator")
+	}
+}
+
+func TestSetRequestContextForbiddenWhenOrgCheckFails(t *testing.T) {
+	validator := &fakeOrgValidator{allowed: false}
+	mw := NewOrgContextMiddleware(validator)
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "acme.platform-mesh.io"
+	ctx := pmcontext.AddAuthHeaderToContext(req.Context(), "Bearer abc")
+	ctx = context.WithValue(ctx, keys.WebTokenCtxKey, jwt.WebToken{
+		IssuerAttributes: jwt.IssuerAttributes{
+			Issuer:  "https://idp.example.org/auth/realms/acme-tenant",
+			Subject: "user",
+		},
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	mw.SetRequestContext()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatalf("next handler must not be called")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rr.Code)
+	}
+}
+
+func TestSetRequestContextReturns500OnValidatorError(t *testing.T) {
+	validator := &fakeOrgValidator{err: errors.New("boom")}
+	mw := NewOrgContextMiddleware(validator)
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "acme.platform-mesh.io"
+	ctx := pmcontext.AddAuthHeaderToContext(req.Context(), "Bearer abc")
+	ctx = context.WithValue(ctx, keys.WebTokenCtxKey, jwt.WebToken{
+		IssuerAttributes: jwt.IssuerAttributes{
+			Issuer:  "https://idp.example.org/auth/realms/acme-tenant",
+			Subject: "user",
+		},
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	mw.SetRequestContext()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatalf("next handler must not be called")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rr.Code)
+	}
+}
+
+func TestSetRequestContextReturns401ForInvalidTokenContext(t *testing.T) {
+	validator := &fakeOrgValidator{allowed: true}
+	mw := NewOrgContextMiddleware(validator)
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "acme.platform-mesh.io"
+	req = req.WithContext(pmcontext.AddAuthHeaderToContext(req.Context(), "Bearer abc"))
+
+	rr := httptest.NewRecorder()
+	mw.SetRequestContext()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatalf("next handler must not be called")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestSetRequestContextReturns401ForInvalidIssuer(t *testing.T) {
+	validator := &fakeOrgValidator{allowed: true}
+	mw := NewOrgContextMiddleware(validator)
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "acme.platform-mesh.io"
+	ctx := pmcontext.AddAuthHeaderToContext(req.Context(), "Bearer abc")
+	ctx = context.WithValue(ctx, keys.WebTokenCtxKey, jwt.WebToken{
+		IssuerAttributes: jwt.IssuerAttributes{
+			Issuer:  "https://idp.example.org/no-realms-segment",
+			Subject: "user",
+		},
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	mw.SetRequestContext()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatalf("next handler must not be called")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+}

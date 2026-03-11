@@ -1,0 +1,139 @@
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"time"
+
+	openfgav1 "github.com/openfga/api/proto/openfga/v1"
+	pmcontext "github.com/platform-mesh/golang-commons/context"
+	gerrors "github.com/platform-mesh/golang-commons/errors"
+	cmw "github.com/platform-mesh/golang-commons/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
+	fgaclient "github.com/platform-mesh/search/internal/clients/fga"
+	"github.com/platform-mesh/search/internal/clients/kcp"
+	osclient "github.com/platform-mesh/search/internal/clients/opensearch"
+	lmw "github.com/platform-mesh/search/internal/middleware"
+	"github.com/platform-mesh/search/internal/observability"
+	"github.com/platform-mesh/search/internal/router"
+	searchservice "github.com/platform-mesh/search/internal/service/search"
+
+	"github.com/spf13/cobra"
+)
+
+var serverCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "Start serving",
+	Long:  `Start the Search Service as a Webservice`,
+	Run: func(cmd *cobra.Command, args []string) {
+		ctx, _, shutdown := pmcontext.StartContext(log, serviceCfg, defaultCfg.ShutdownTimeout)
+		defer shutdown()
+
+		restCfg, err := loadRestConfig(defaultCfg.Kubeconfig)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to load kube config")
+		}
+
+		orgValidator, err := kcp.NewOrgAccessValidator(restCfg, log)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to create org access validator")
+		}
+
+		searchIndexResolver, err := kcp.NewSearchIndexResolver(restCfg, serviceCfg.SearchIndex, log)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to create SearchIndex resolver")
+		}
+
+		openSearchClient, err := osclient.NewClient(osclient.Config{
+			URL:      serviceCfg.OpenSearch.URL,
+			Username: serviceCfg.OpenSearch.Username,
+			Password: serviceCfg.OpenSearch.Password,
+			Insecure: serviceCfg.OpenSearch.Insecure,
+			Timeout:  serviceCfg.OpenSearch.Timeout,
+		})
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to create OpenSearch client")
+		}
+
+		fgaClient, err := setupFGAClient(serviceCfg.OpenFGA.GRPCAddr)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to create OpenFGA client")
+		}
+
+		metrics := observability.NewMetrics()
+		svc := searchservice.NewService(
+			searchIndexResolver,
+			openSearchClient,
+			fgaclient.NewAuthorizer(fgaClient),
+			metrics,
+			searchservice.ServiceConfig{
+				DefaultLimit:   serviceCfg.Search.DefaultLimit,
+				MaxLimit:       serviceCfg.Search.MaxLimit,
+				FetchBatchSize: serviceCfg.Search.FetchBatchSize,
+				MaxScannedHits: serviceCfg.Search.MaxScannedHits,
+			},
+		)
+
+		mws := cmw.CreateMiddleware(log, true)
+		orgCtxMW := lmw.NewOrgContextMiddleware(orgValidator)
+		mws = append(mws, orgCtxMW.SetRequestContext())
+
+		r := router.CreateRouter(svc, mws)
+		startHTTPServer(ctx, r)
+	},
+}
+
+func loadRestConfig(kubeconfig string) (*rest.Config, error) {
+	if kubeconfig != "" {
+		return clientcmd.BuildConfigFromFlags("", kubeconfig)
+	}
+	cfg, err := rest.InClusterConfig()
+	if err == nil {
+		return cfg, nil
+	}
+	return nil, fmt.Errorf("unable to load in-cluster config and no kubeconfig provided: %w", err)
+}
+
+func setupFGAClient(addr string) (openfgav1.OpenFGAServiceClient, error) {
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return openfgav1.NewOpenFGAServiceClient(conn), nil
+}
+
+func startHTTPServer(ctx context.Context, handler http.Handler) {
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%d", serviceCfg.Port),
+		Handler:      handler,
+		ReadTimeout:  20 * time.Second,
+		WriteTimeout: 20 * time.Second,
+		BaseContext:  func(listener net.Listener) context.Context { return ctx },
+	}
+
+	go func() {
+		err := server.ListenAndServe()
+		if err != nil && !gerrors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("failed to start http server")
+		}
+	}()
+
+	log.Info().Msgf("service started on port: %d", serviceCfg.Port)
+	<-ctx.Done()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Panic().Err(err).Msg("graceful shutdown failed")
+	}
+}

@@ -1,0 +1,43 @@
+package search
+
+import "testing"
+
+func TestCursorRoundTrip(t *testing.T) {
+	state := CursorState{
+		Version:     cursorVersion,
+		Org:         "acme",
+		QueryHash:   queryHash("foo"),
+		Limit:       20,
+		SearchAfter: []interface{}{1.23, "abc"},
+	}
+
+	encoded, err := EncodeCursor(state)
+	if err != nil {
+		t.Fatalf("EncodeCursor returned error: %v", err)
+	}
+
+	decoded, err := DecodeCursor(encoded)
+	if err != nil {
+		t.Fatalf("DecodeCursor returned error: %v", err)
+	}
+
+	if decoded.Org != state.Org || decoded.QueryHash != state.QueryHash || decoded.Limit != state.Limit {
+		t.Fatalf("decoded cursor mismatch: %+v", decoded)
+	}
+	if len(decoded.SearchAfter) != 2 {
+		t.Fatalf("unexpected search_after length: %d", len(decoded.SearchAfter))
+	}
+}
+
+func TestValidateCursorMismatch(t *testing.T) {
+	state := CursorState{Version: cursorVersion, Org: "acme", QueryHash: queryHash("foo"), Limit: 20, SearchAfter: []interface{}{1.0, "x"}}
+	if err := ValidateCursor(state, "other", queryHash("foo"), 20); err == nil {
+		t.Fatalf("expected org mismatch error")
+	}
+	if err := ValidateCursor(state, "acme", queryHash("bar"), 20); err == nil {
+		t.Fatalf("expected query mismatch error")
+	}
+	if err := ValidateCursor(state, "acme", queryHash("foo"), 30); err == nil {
+		t.Fatalf("expected limit mismatch error")
+	}
+}
