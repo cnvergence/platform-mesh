@@ -3,6 +3,7 @@ package kcp
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -58,8 +59,24 @@ func (v *OrgAccessValidator) ValidateTokenForOrg(ctx context.Context, authHeader
 	case http.StatusOK, http.StatusCreated, http.StatusForbidden:
 		return true, nil
 	case http.StatusUnauthorized:
+		v.log.Warn().
+			Str("organization", org).
+			Str("clusterPath", clusterPath).
+			Int("statusCode", resp.StatusCode).
+			Msg("KCP org token validation denied request")
 		return false, nil
 	default:
+		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		bodySnippet := strings.TrimSpace(string(bodyBytes))
+		logEvt := v.log.Warn().
+			Str("organization", org).
+			Str("clusterPath", clusterPath).
+			Int("statusCode", resp.StatusCode)
+		if bodySnippet != "" {
+			logEvt = logEvt.Str("responseBody", bodySnippet)
+		}
+		logEvt.Msg("KCP org token validation returned unexpected status")
+
 		if strings.HasPrefix(fmt.Sprintf("%d", resp.StatusCode), "5") {
 			return false, fmt.Errorf("kcp auth check failed with status %d", resp.StatusCode)
 		}

@@ -29,7 +29,7 @@ func (f *fakeOrgValidator) ValidateTokenForOrg(_ context.Context, authHeader, or
 
 func TestSetRequestContextSuccessUsesMailFallbackToSub(t *testing.T) {
 	validator := &fakeOrgValidator{allowed: true}
-	mw := NewOrgContextMiddleware(validator)
+	mw := NewOrgContextMiddleware(validator, false, "local")
 
 	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
 	req.Host = "acme.platform-mesh.io:8443"
@@ -77,7 +77,7 @@ func TestSetRequestContextSuccessUsesMailFallbackToSub(t *testing.T) {
 
 func TestSetRequestContextForbiddenWhenOrgCheckFails(t *testing.T) {
 	validator := &fakeOrgValidator{allowed: false}
-	mw := NewOrgContextMiddleware(validator)
+	mw := NewOrgContextMiddleware(validator, false, "local")
 
 	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
 	req.Host = "acme.platform-mesh.io"
@@ -102,7 +102,7 @@ func TestSetRequestContextForbiddenWhenOrgCheckFails(t *testing.T) {
 
 func TestSetRequestContextReturns500OnValidatorError(t *testing.T) {
 	validator := &fakeOrgValidator{err: errors.New("boom")}
-	mw := NewOrgContextMiddleware(validator)
+	mw := NewOrgContextMiddleware(validator, false, "local")
 
 	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
 	req.Host = "acme.platform-mesh.io"
@@ -127,7 +127,7 @@ func TestSetRequestContextReturns500OnValidatorError(t *testing.T) {
 
 func TestSetRequestContextReturns401ForInvalidTokenContext(t *testing.T) {
 	validator := &fakeOrgValidator{allowed: true}
-	mw := NewOrgContextMiddleware(validator)
+	mw := NewOrgContextMiddleware(validator, false, "local")
 
 	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
 	req.Host = "acme.platform-mesh.io"
@@ -145,7 +145,7 @@ func TestSetRequestContextReturns401ForInvalidTokenContext(t *testing.T) {
 
 func TestSetRequestContextReturns401ForInvalidIssuer(t *testing.T) {
 	validator := &fakeOrgValidator{allowed: true}
-	mw := NewOrgContextMiddleware(validator)
+	mw := NewOrgContextMiddleware(validator, false, "local")
 
 	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
 	req.Host = "acme.platform-mesh.io"
@@ -165,5 +165,148 @@ func TestSetRequestContextReturns401ForInvalidIssuer(t *testing.T) {
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+}
+
+func TestSetRequestContextLocalhostOverridesOrgAndBypassesValidator(t *testing.T) {
+	validator := &fakeOrgValidator{allowed: false}
+	mw := NewOrgContextMiddleware(validator, false, "local-org-test")
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "localhost:8443"
+
+	ctx := pmcontext.AddAuthHeaderToContext(req.Context(), "bearer\tabc")
+	ctx = context.WithValue(ctx, keys.WebTokenCtxKey, jwt.WebToken{
+		IssuerAttributes: jwt.IssuerAttributes{
+			Issuer:  "https://idp.example.org/auth/realms/acme-tenant",
+			Subject: "subject-user",
+		},
+		ParsedAttributes: jwt.ParsedAttributes{Mail: "user@example.org"},
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc, err := appcontext.GetRequestContext(r.Context())
+		if err != nil {
+			t.Fatalf("request context missing: %v", err)
+		}
+		if rc.Organization != "local-org-test" {
+			t.Fatalf("unexpected org: %s", rc.Organization)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mw.SetRequestContext()(next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
+	}
+	if validator.org != "" || validator.auth != "" {
+		t.Fatalf("validator must not be called for localhost requests")
+	}
+}
+
+func TestSetRequestContextBypassesValidatorInLocalDevelopmentMode(t *testing.T) {
+	validator := &fakeOrgValidator{allowed: false}
+	mw := NewOrgContextMiddleware(validator, true, "local")
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "acme.platform-mesh.io"
+
+	ctx := pmcontext.AddAuthHeaderToContext(req.Context(), "Bearer abc")
+	ctx = context.WithValue(ctx, keys.WebTokenCtxKey, jwt.WebToken{
+		IssuerAttributes: jwt.IssuerAttributes{
+			Issuer:  "https://idp.example.org/auth/realms/acme-tenant",
+			Subject: "subject-user",
+		},
+		ParsedAttributes: jwt.ParsedAttributes{Mail: "user@example.org"},
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc, err := appcontext.GetRequestContext(r.Context())
+		if err != nil {
+			t.Fatalf("request context missing: %v", err)
+		}
+		if rc.Organization != "acme" {
+			t.Fatalf("unexpected org: %s", rc.Organization)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mw.SetRequestContext()(next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
+	}
+	if validator.org != "" || validator.auth != "" {
+		t.Fatalf("validator must not be called in local development mode")
+	}
+}
+
+func TestSetRequestContextReturns401ForMalformedAuthorizationHeader(t *testing.T) {
+	validator := &fakeOrgValidator{allowed: true}
+	mw := NewOrgContextMiddleware(validator, false, "local")
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "acme.platform-mesh.io"
+
+	ctx := pmcontext.AddAuthHeaderToContext(req.Context(), "abc")
+	ctx = context.WithValue(ctx, keys.WebTokenCtxKey, jwt.WebToken{
+		IssuerAttributes: jwt.IssuerAttributes{
+			Issuer:  "https://idp.example.org/auth/realms/acme-tenant",
+			Subject: "subject-user",
+		},
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	mw.SetRequestContext()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatalf("next handler must not be called")
+	})).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rr.Code)
+	}
+	if validator.org != "" || validator.auth != "" {
+		t.Fatalf("validator must not be called on malformed auth header")
+	}
+}
+
+func TestNewOrgContextMiddlewareFallsBackToDefaultLocalOrg(t *testing.T) {
+	validator := &fakeOrgValidator{allowed: false}
+	mw := NewOrgContextMiddleware(validator, false, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/rest/v1/search?q=test", nil)
+	req.Host = "localhost:8443"
+
+	ctx := pmcontext.AddAuthHeaderToContext(req.Context(), "Bearer abc")
+	ctx = context.WithValue(ctx, keys.WebTokenCtxKey, jwt.WebToken{
+		IssuerAttributes: jwt.IssuerAttributes{
+			Issuer:  "https://idp.example.org/auth/realms/acme-tenant",
+			Subject: "subject-user",
+		},
+		ParsedAttributes: jwt.ParsedAttributes{Mail: "user@example.org"},
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc, err := appcontext.GetRequestContext(r.Context())
+		if err != nil {
+			t.Fatalf("request context missing: %v", err)
+		}
+		if rc.Organization != defaultLocalDevelopmentOrg {
+			t.Fatalf("unexpected org: %s", rc.Organization)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mw.SetRequestContext()(next).ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
 	}
 }

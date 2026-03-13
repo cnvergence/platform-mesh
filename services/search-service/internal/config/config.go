@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -34,16 +35,18 @@ type SearchConfig struct {
 }
 
 type ServiceConfig struct {
-	Port        int
-	OpenSearch  OpenSearchConfig
-	OpenFGA     OpenFGAConfig
-	SearchIndex SearchIndexConfig
-	Search      SearchConfig
+	Port                int
+	LocalDevelopmentOrg string
+	OpenSearch          OpenSearchConfig
+	OpenFGA             OpenFGAConfig
+	SearchIndex         SearchIndexConfig
+	Search              SearchConfig
 }
 
 func NewServiceConfig() *ServiceConfig {
 	return &ServiceConfig{
-		Port: 8080,
+		Port:                8080,
+		LocalDevelopmentOrg: localDevelopmentOrgFromEnv(),
 		OpenSearch: OpenSearchConfig{
 			URL:      "http://opensearch.platform-mesh-system.svc.cluster.local:9200",
 			Username: os.Getenv("OPENSEARCH_USERNAME"),
@@ -71,6 +74,7 @@ func NewServiceConfig() *ServiceConfig {
 
 func (c *ServiceConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&c.Port, "port", c.Port, "Set the service port")
+	fs.StringVar(&c.LocalDevelopmentOrg, "local-development-org", c.LocalDevelopmentOrg, "Organization to use when request host is localhost")
 
 	fs.StringVar(&c.OpenSearch.URL, "opensearch-url", c.OpenSearch.URL, "Set OpenSearch URL")
 	fs.StringVar(&c.OpenSearch.Username, "opensearch-username", c.OpenSearch.Username, "Set OpenSearch username")
@@ -89,4 +93,12 @@ func (c *ServiceConfig) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&c.Search.MaxLimit, "search-max-limit", c.Search.MaxLimit, "Maximum search result limit")
 	fs.IntVar(&c.Search.FetchBatchSize, "search-fetch-batch-size", c.Search.FetchBatchSize, "Batch size for OpenSearch fetches")
 	fs.IntVar(&c.Search.MaxScannedHits, "search-max-scanned-hits", c.Search.MaxScannedHits, "Maximum raw hits scanned per request")
+}
+
+func localDevelopmentOrgFromEnv() string {
+	v := strings.TrimSpace(os.Getenv("SEARCH_LOCAL_ORG"))
+	if v == "" {
+		return "local"
+	}
+	return v
 }

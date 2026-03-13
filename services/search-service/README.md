@@ -56,9 +56,22 @@ export OPENSEARCH_PASSWORD=<password>
 
 go run . serve \
   --kubeconfig ~/.kube/config \
+  --is-local=true \
   --opensearch-url http://localhost:9200 \
   --openfga-grpc-addr localhost:8081
 ```
+
+### Local Development Mode (`--is-local=true`)
+
+Use `--is-local=true` for local development to match the local behavior of `kubernetes-graphql-gateway`.
+
+When enabled:
+
+- org context is still derived from host (`localhost` is mapped to `--local-development-org`)
+- JWT claims are still parsed for user/tenant context
+- KCP org token validation (`ValidateTokenForOrg`) is bypassed
+
+This is intended for local/dev usage only. Keep `--is-local=false` for production-like environments.
 
 ### Configuration flags
 
@@ -79,6 +92,8 @@ Main runtime flags (with defaults):
 - `--search-max-limit` (default: `100`)
 - `--search-fetch-batch-size` (default: `100`)
 - `--search-max-scanned-hits` (default: `1000`)
+- `--is-local` (default: `false`) enables local development behavior in auth middleware
+- `--local-development-org` (default: env `SEARCH_LOCAL_ORG`, fallback `local`) org used when host is `localhost`
 
 Global flags from `golang-commons` are also available (e.g. logging and kubeconfig related flags).
 

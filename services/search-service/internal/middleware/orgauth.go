@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,12 +15,24 @@ import (
 
 var issuerRegex = regexp.MustCompile(`^.*\/realms\/(.*?)\/?$`)
 
+const defaultLocalDevelopmentOrg = "local"
+
 type OrgContextMiddleware struct {
-	validator search.OrgAccessValidator
+	validator        search.OrgAccessValidator
+	localDevelopment bool
+	localOrg         string
 }
 
-func NewOrgContextMiddleware(validator search.OrgAccessValidator) *OrgContextMiddleware {
-	return &OrgContextMiddleware{validator: validator}
+func NewOrgContextMiddleware(validator search.OrgAccessValidator, localDevelopment bool, localOrg string) *OrgContextMiddleware {
+	localOrg = strings.TrimSpace(localOrg)
+	if localOrg == "" {
+		localOrg = defaultLocalDevelopmentOrg
+	}
+	return &OrgContextMiddleware{
+		validator:        validator,
+		localDevelopment: localDevelopment,
+		localOrg:         localOrg,
+	}
 }
 
 func (m *OrgContextMiddleware) SetRequestContext() func(http.Handler) http.Handler {
@@ -34,8 +45,10 @@ func (m *OrgContextMiddleware) SetRequestContext() func(http.Handler) http.Handl
 				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
-
-			org = "sap"
+			localHost := isLocalHost(r.Host)
+			if localHost {
+				org = m.localOrg
+			}
 
 			token, err := pmcontext.GetWebTokenFromContext(ctx)
 			if err != nil {
@@ -43,14 +56,18 @@ func (m *OrgContextMiddleware) SetRequestContext() func(http.Handler) http.Handl
 				return
 			}
 
-			authHeader, err := pmcontext.GetAuthHeaderFromContext(ctx)
-			if err != nil {
-				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-				return
-			}
-			_ = authHeader
+			if !(m.localDevelopment || localHost) {
+				authHeader, err := pmcontext.GetAuthHeaderFromContext(ctx)
+				if err != nil {
+					http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+					return
+				}
+				authHeader, err = normalizeBearerAuthHeader(authHeader)
+				if err != nil {
+					http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+					return
+				}
 
-			/*
 				allowed, err := m.validator.ValidateTokenForOrg(ctx, authHeader, org)
 				if err != nil {
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -60,7 +77,7 @@ func (m *OrgContextMiddleware) SetRequestContext() func(http.Handler) http.Handl
 					http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 					return
 				}
-			*/
+			}
 
 			user := strings.TrimSpace(token.Mail)
 			if user == "" {
@@ -102,14 +119,31 @@ func extractSubdomain(host string) string {
 	return strings.TrimSpace(parts[0])
 }
 
+func isLocalHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	} else {
+		host = strings.Split(host, ":")[0]
+	}
+	host = strings.TrimSpace(strings.ToLower(host))
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
+
+func normalizeBearerAuthHeader(header string) (string, error) {
+	parts := strings.Fields(strings.TrimSpace(header))
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+		return "", fmt.Errorf("invalid authorization header")
+	}
+	return "Bearer " + parts[1], nil
+}
+
 func extractTenant(issuer string) (string, error) {
 	match := issuerRegex.FindStringSubmatch(issuer)
 	if len(match) < 2 || match[1] == "" {
 		return "", fmt.Errorf("invalid issuer")
 	}
 	return match[1], nil
-}
-
-func InjectRequestContext(ctx context.Context, rc appcontext.RequestContext) context.Context {
-	return appcontext.WithRequestContext(ctx, rc)
 }

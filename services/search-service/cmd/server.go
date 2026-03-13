@@ -82,7 +82,7 @@ var serverCmd = &cobra.Command{
 		)
 
 		mws := cmw.CreateMiddleware(log, true)
-		orgCtxMW := lmw.NewOrgContextMiddleware(orgValidator)
+		orgCtxMW := lmw.NewOrgContextMiddleware(orgValidator, defaultCfg.IsLocal, serviceCfg.LocalDevelopmentOrg)
 		mws = append(mws, orgCtxMW.SetRequestContext())
 
 		r := router.CreateRouter(svc, mws)
