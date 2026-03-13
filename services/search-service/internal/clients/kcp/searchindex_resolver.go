@@ -86,6 +86,13 @@ func (r *SearchIndexResolver) ResolveIndex(ctx context.Context, org string) (sea
 	if err := r.getJSON(ctx, resourceURL, &list); err != nil {
 		return search.SearchIndexRef{}, fmt.Errorf("list SearchIndex resources: %w", err)
 	}
+	if len(list.Items) == 0 {
+		return search.SearchIndexRef{}, fmt.Errorf(
+			"no SearchIndex resources found at %q; ensure SearchIndex objects exist in workspace %q",
+			resourceURL,
+			r.cfg.WorkspacePath,
+		)
+	}
 
 	selected, err := selectSearchIndex(org, orgClusterID, list.Items)
 	if err != nil {
@@ -153,10 +160,6 @@ func (r *SearchIndexResolver) getJSON(ctx context.Context, requestURL string, ou
 }
 
 func selectSearchIndex(org, orgClusterID string, items []searchIndexResource) (searchIndexResource, error) {
-	if len(items) == 0 {
-		return searchIndexResource{}, fmt.Errorf("no SearchIndex resources found in %q", org)
-	}
-
 	clusterMatches := make([]searchIndexResource, 0, 1)
 	for _, item := range items {
 		if strings.TrimSpace(item.Spec.OrganizationClusterID) == orgClusterID {
