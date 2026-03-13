@@ -2,14 +2,15 @@ package kcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/platform-mesh/golang-commons/logger"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 
 	"github.com/platform-mesh/search/internal/config"
@@ -17,17 +18,12 @@ import (
 )
 
 type SearchIndexResolver struct {
-	http    *http.Client
-	baseURL *url.URL
-	cfg     config.SearchIndexConfig
-	log     *logger.Logger
+	client dynamic.Interface
+	cfg    config.SearchIndexConfig
+	log    *logger.Logger
 }
 
-type workspaceResource struct {
-	Spec struct {
-		Cluster string `json:"cluster"`
-	} `json:"spec"`
-}
+const searchIndexOrgClusterIDLabel = "search.platform-mesh.io/org-cluster-id"
 
 type searchIndexResource struct {
 	Metadata struct {
@@ -42,22 +38,20 @@ type searchIndexResource struct {
 }
 
 func NewSearchIndexResolver(restCfg *rest.Config, cfg config.SearchIndexConfig, log *logger.Logger) (*SearchIndexResolver, error) {
-	httpClient, err := rest.HTTPClientFor(restCfg)
+	scopedCfg, err := configForKCPCluster(cfg.WorkspacePath, restCfg)
 	if err != nil {
-		return nil, fmt.Errorf("create KCP HTTP client: %w", err)
+		return nil, fmt.Errorf("create KCP workspace config: %w", err)
 	}
 
-	baseURL, err := url.Parse(restCfg.Host)
+	dynamicClient, err := dynamic.NewForConfig(scopedCfg)
 	if err != nil {
-		return nil, fmt.Errorf("parse KCP host URL: %w", err)
+		return nil, fmt.Errorf("create KCP dynamic client: %w", err)
 	}
-	baseURL.Path = ""
 
 	return &SearchIndexResolver{
-		http:    httpClient,
-		baseURL: baseURL,
-		cfg:     cfg,
-		log:     log,
+		client: dynamicClient,
+		cfg:    cfg,
+		log:    log,
 	}, nil
 }
 
@@ -72,24 +66,21 @@ func (r *SearchIndexResolver) ResolveIndex(ctx context.Context, org string) (sea
 		return search.SearchIndexRef{}, err
 	}
 
-	resourceURL := fmt.Sprintf("%s://%s/clusters/%s/apis/%s/%s/%s",
-		r.baseURL.Scheme,
-		r.baseURL.Host,
-		r.cfg.WorkspacePath,
-		r.cfg.Group,
-		r.cfg.Version,
-		r.cfg.Resource,
-	)
-	var list struct {
-		Items []searchIndexResource `json:"items"`
-	}
-	if err := r.getJSON(ctx, resourceURL, &list); err != nil {
+	list, err := r.listSearchIndices(ctx, orgClusterID)
+	if err != nil {
 		return search.SearchIndexRef{}, fmt.Errorf("list SearchIndex resources: %w", err)
+	}
+	// Backward-compatible fallback for SearchIndex resources created before
+	// org-cluster-id labels were introduced.
+	if len(list.Items) == 0 {
+		list, err = r.listSearchIndices(ctx, "")
+		if err != nil {
+			return search.SearchIndexRef{}, fmt.Errorf("list SearchIndex resources (fallback): %w", err)
+		}
 	}
 	if len(list.Items) == 0 {
 		return search.SearchIndexRef{}, fmt.Errorf(
-			"no SearchIndex resources found at %q; ensure SearchIndex objects exist in workspace %q",
-			resourceURL,
+			"no SearchIndex resources found in workspace %q",
 			r.cfg.WorkspacePath,
 		)
 	}
@@ -116,47 +107,96 @@ func (r *SearchIndexResolver) ResolveIndex(ctx context.Context, org string) (sea
 }
 
 func (r *SearchIndexResolver) resolveOrganizationClusterID(ctx context.Context, org string) (string, error) {
-	workspaceURL := fmt.Sprintf("%s://%s/clusters/%s/apis/tenancy.kcp.io/v1alpha1/workspaces/%s",
-		r.baseURL.Scheme,
-		r.baseURL.Host,
-		r.cfg.WorkspacePath,
-		org,
-	)
-
-	var payload workspaceResource
-	if err := r.getJSON(ctx, workspaceURL, &payload); err != nil {
+	obj, err := r.client.Resource(workspaceGVR).Get(ctx, org, metav1.GetOptions{})
+	if err != nil {
 		return "", fmt.Errorf("resolve workspace cluster ID for org %q: %w", org, err)
 	}
 
-	clusterID := strings.TrimSpace(payload.Spec.Cluster)
+	clusterID, found, err := unstructured.NestedString(obj.Object, "spec", "cluster")
+	if err != nil || !found {
+		return "", fmt.Errorf("workspace %q does not expose spec.cluster", org)
+	}
+
+	clusterID = strings.TrimSpace(clusterID)
 	if clusterID == "" {
 		return "", fmt.Errorf("workspace %q does not expose spec.cluster", org)
 	}
 	return clusterID, nil
 }
 
-func (r *SearchIndexResolver) getJSON(ctx context.Context, requestURL string, out interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, http.NoBody)
+func (r *SearchIndexResolver) listSearchIndices(ctx context.Context, orgClusterID string) (struct {
+	Items []searchIndexResource `json:"items"`
+}, error) {
+	list := struct {
+		Items []searchIndexResource `json:"items"`
+	}{}
+
+	listOpts := metav1.ListOptions{}
+	if orgClusterID != "" {
+		listOpts.LabelSelector = fmt.Sprintf("%s=%s", searchIndexOrgClusterIDLabel, orgClusterID)
+	}
+
+	objList, err := r.client.Resource(searchIndexGVR(r.cfg)).List(ctx, listOpts)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return list, err
 	}
 
-	resp, err := r.http.Do(req)
+	items := make([]searchIndexResource, 0, len(objList.Items))
+	for _, item := range objList.Items {
+		items = append(items, searchIndexResource{
+			Metadata: struct {
+				Name string `json:"name"`
+			}{Name: item.GetName()},
+			Spec: struct {
+				OrganizationClusterID string `json:"organizationClusterID"`
+			}{OrganizationClusterID: strings.TrimSpace(getNestedString(item.Object, "spec", "organizationClusterID"))},
+			Status: struct {
+				IndexName string `json:"indexName"`
+			}{IndexName: strings.TrimSpace(getNestedString(item.Object, "status", "indexName"))},
+		})
+	}
+
+	list.Items = items
+	return list, nil
+}
+
+func configForKCPCluster(clusterName string, cfg *rest.Config) (*rest.Config, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+
+	clusterCfg := rest.CopyConfig(cfg)
+	clusterCfgURL, err := url.Parse(clusterCfg.Host)
 	if err != nil {
-		return fmt.Errorf("execute request: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return nil, fmt.Errorf("failed to parse host URL: %w", err)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
+	clusterCfgURL.Path = fmt.Sprintf("/clusters/%s", clusterName)
+	clusterCfg.Host = clusterCfgURL.String()
 
-	return nil
+	return clusterCfg, nil
+}
+
+func searchIndexGVR(cfg config.SearchIndexConfig) schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    cfg.Group,
+		Version:  cfg.Version,
+		Resource: cfg.Resource,
+	}
+}
+
+var workspaceGVR = schema.GroupVersionResource{
+	Group:    "tenancy.kcp.io",
+	Version:  "v1alpha1",
+	Resource: "workspaces",
+}
+
+func getNestedString(obj map[string]interface{}, fields ...string) string {
+	value, found, err := unstructured.NestedString(obj, fields...)
+	if err != nil || !found {
+		return ""
+	}
+	return value
 }
 
 func selectSearchIndex(org, orgClusterID string, items []searchIndexResource) (searchIndexResource, error) {

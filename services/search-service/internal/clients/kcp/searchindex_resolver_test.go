@@ -5,21 +5,19 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/platform-mesh/search/internal/config"
+	"k8s.io/client-go/rest"
 )
 
 func TestResolveIndexMatchesByOrganizationClusterID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/clusters/root:orgs/apis/tenancy.kcp.io/v1alpha1/workspaces/acme":
-			writeJSON(t, w, map[string]interface{}{
-				"spec": map[string]interface{}{"cluster": "cluster-123"},
-			})
+			writeJSON(t, w, workspacePayload("acme", "cluster-123"))
 		case "/clusters/root:orgs/apis/core.platform-mesh.io/v1alpha1/searchindices":
-			writeJSON(t, w, map[string]interface{}{
+			writeJSON(t, w, searchIndexListPayload(map[string]interface{}{
 				"items": []map[string]interface{}{
 					{
 						"metadata": map[string]interface{}{"name": "acme"},
@@ -32,7 +30,7 @@ func TestResolveIndexMatchesByOrganizationClusterID(t *testing.T) {
 						"status":   map[string]interface{}{"indexName": "pm-orgs-cluster-123"},
 					},
 				},
-			})
+			}))
 		default:
 			http.NotFound(w, r)
 		}
@@ -56,11 +54,9 @@ func TestResolveIndexFallsBackToResourceName(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/clusters/root:orgs/apis/tenancy.kcp.io/v1alpha1/workspaces/acme":
-			writeJSON(t, w, map[string]interface{}{
-				"spec": map[string]interface{}{"cluster": "cluster-123"},
-			})
+			writeJSON(t, w, workspacePayload("acme", "cluster-123"))
 		case "/clusters/root:orgs/apis/core.platform-mesh.io/v1alpha1/searchindices":
-			writeJSON(t, w, map[string]interface{}{
+			writeJSON(t, w, searchIndexListPayload(map[string]interface{}{
 				"items": []map[string]interface{}{
 					{
 						"metadata": map[string]interface{}{"name": "acme"},
@@ -73,7 +69,7 @@ func TestResolveIndexFallsBackToResourceName(t *testing.T) {
 						"status":   map[string]interface{}{"indexName": "pm-orgs-cluster-other"},
 					},
 				},
-			})
+			}))
 		default:
 			http.NotFound(w, r)
 		}
@@ -97,11 +93,9 @@ func TestResolveIndexFallsBackToSpecOrganizationClusterIDWhenStatusEmpty(t *test
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/clusters/root:orgs/apis/tenancy.kcp.io/v1alpha1/workspaces/acme":
-			writeJSON(t, w, map[string]interface{}{
-				"spec": map[string]interface{}{"cluster": "cluster-123"},
-			})
+			writeJSON(t, w, workspacePayload("acme", "cluster-123"))
 		case "/clusters/root:orgs/apis/core.platform-mesh.io/v1alpha1/searchindices":
-			writeJSON(t, w, map[string]interface{}{
+			writeJSON(t, w, searchIndexListPayload(map[string]interface{}{
 				"items": []map[string]interface{}{
 					{
 						"metadata": map[string]interface{}{"name": "searchindex-acme"},
@@ -109,7 +103,7 @@ func TestResolveIndexFallsBackToSpecOrganizationClusterIDWhenStatusEmpty(t *test
 						"status":   map[string]interface{}{"indexName": ""},
 					},
 				},
-			})
+			}))
 		default:
 			http.NotFound(w, r)
 		}
@@ -130,11 +124,9 @@ func TestResolveIndexReturnsErrorWhenClusterMatchIsAmbiguous(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/clusters/root:orgs/apis/tenancy.kcp.io/v1alpha1/workspaces/acme":
-			writeJSON(t, w, map[string]interface{}{
-				"spec": map[string]interface{}{"cluster": "cluster-123"},
-			})
+			writeJSON(t, w, workspacePayload("acme", "cluster-123"))
 		case "/clusters/root:orgs/apis/core.platform-mesh.io/v1alpha1/searchindices":
-			writeJSON(t, w, map[string]interface{}{
+			writeJSON(t, w, searchIndexListPayload(map[string]interface{}{
 				"items": []map[string]interface{}{
 					{
 						"metadata": map[string]interface{}{"name": "idx-1"},
@@ -147,7 +139,7 @@ func TestResolveIndexReturnsErrorWhenClusterMatchIsAmbiguous(t *testing.T) {
 						"status":   map[string]interface{}{"indexName": "pm-orgs-cluster-123-b"},
 					},
 				},
-			})
+			}))
 		default:
 			http.NotFound(w, r)
 		}
@@ -163,21 +155,17 @@ func TestResolveIndexReturnsErrorWhenClusterMatchIsAmbiguous(t *testing.T) {
 func newTestResolver(t *testing.T, base string) *SearchIndexResolver {
 	t.Helper()
 
-	parsed, err := url.Parse(base)
+	resolver, err := NewSearchIndexResolver(&rest.Config{Host: base}, config.SearchIndexConfig{
+		WorkspacePath: "root:orgs",
+		Group:         "core.platform-mesh.io",
+		Version:       "v1alpha1",
+		Resource:      "searchindices",
+	}, nil)
 	if err != nil {
-		t.Fatalf("parse base url: %v", err)
+		t.Fatalf("create resolver: %v", err)
 	}
 
-	return &SearchIndexResolver{
-		http:    http.DefaultClient,
-		baseURL: parsed,
-		cfg: config.SearchIndexConfig{
-			WorkspacePath: "root:orgs",
-			Group:         "core.platform-mesh.io",
-			Version:       "v1alpha1",
-			Resource:      "searchindices",
-		},
-	}
+	return resolver
 }
 
 func writeJSON(t *testing.T, w http.ResponseWriter, payload interface{}) {
@@ -186,4 +174,23 @@ func writeJSON(t *testing.T, w http.ResponseWriter, payload interface{}) {
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		t.Fatalf("encode json: %v", err)
 	}
+}
+
+func workspacePayload(name, clusterID string) map[string]interface{} {
+	return map[string]interface{}{
+		"apiVersion": "tenancy.kcp.io/v1alpha1",
+		"kind":       "Workspace",
+		"metadata": map[string]interface{}{
+			"name": name,
+		},
+		"spec": map[string]interface{}{
+			"cluster": clusterID,
+		},
+	}
+}
+
+func searchIndexListPayload(payload map[string]interface{}) map[string]interface{} {
+	payload["apiVersion"] = "core.platform-mesh.io/v1alpha1"
+	payload["kind"] = "SearchIndexList"
+	return payload
 }
