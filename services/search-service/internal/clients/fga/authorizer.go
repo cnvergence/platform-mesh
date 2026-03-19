@@ -3,6 +3,7 @@ package fga
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
@@ -105,11 +106,13 @@ func (a *Authorizer) resolveStoreID(ctx context.Context, org string) (string, er
 	if err != nil {
 		return "", fmt.Errorf("list stores: %w", err)
 	}
+
 	for _, store := range res.GetStores() {
 		if strings.TrimSpace(store.GetName()) == org {
 			return store.GetId(), nil
 		}
 	}
+
 	return "", fmt.Errorf("no OpenFGA store found for organization %q", org)
 }
 
@@ -131,7 +134,7 @@ func chunkRanges(total, chunkSize int) [][2]int {
 }
 
 func buildBatchCheckItem(log *logger.Logger, user, relation string, index int, hit search.OpenSearchHit) (*openfgav1.BatchCheckItem, bool) {
-	ctx, ok := buildAuthorizationContext(log, hit.Source)
+	authContext, ok := buildAuthorizationContext(log, hit.Source)
 	if !ok {
 		return nil, true
 	}
@@ -139,7 +142,7 @@ func buildBatchCheckItem(log *logger.Logger, user, relation string, index int, h
 	tupleKey := &openfgav1.CheckRequestTupleKey{
 		User:     fmt.Sprintf("user:%s", formatUser(user)),
 		Relation: relation,
-		Object:   ctx.object,
+		Object:   authContext.object,
 	}
 
 	log.Debug().
@@ -147,25 +150,25 @@ func buildBatchCheckItem(log *logger.Logger, user, relation string, index int, h
 		Str("user", tupleKey.User).
 		Str("relation", tupleKey.Relation).
 		Str("object", tupleKey.Object).
-		Interface("contextualTuples", ctx.contextualTuples).
+		Interface("contextualTuples", authContext.contextualTuples).
 		Msg("building FGA BatchCheck item")
 
 	return &openfgav1.BatchCheckItem{
 		TupleKey:         tupleKey,
-		ContextualTuples: &openfgav1.ContextualTupleKeys{TupleKeys: ctx.contextualTuples},
-		CorrelationId:    fmt.Sprintf("%d", index),
+		ContextualTuples: &openfgav1.ContextualTupleKeys{TupleKeys: authContext.contextualTuples},
+		CorrelationId:    strconv.Itoa(index),
 	}, false
 }
 
-type authzContext struct {
+type authContext struct {
 	object           string
 	contextualTuples []*openfgav1.TupleKey
 }
 
-func buildAuthorizationContext(log *logger.Logger, source map[string]interface{}) (authzContext, bool) {
+func buildAuthorizationContext(log *logger.Logger, source map[string]interface{}) (authContext, bool) {
 	if source == nil {
-		log.Debug().Msg("authz context build failed: source is nil")
-		return authzContext{}, false
+		log.Debug().Msg("auth context build failed: source is nil")
+		return authContext{}, false
 	}
 
 	fgaObject := readString(source, "fga_object")
@@ -186,10 +189,10 @@ func buildAuthorizationContext(log *logger.Logger, source map[string]interface{}
 				})
 			}
 		}
-		return authzContext{object: fgaObject, contextualTuples: tuples}, true
+		return authContext{object: fgaObject, contextualTuples: tuples}, true
 	}
 
-	return authzContext{}, false
+	return authContext{}, false
 }
 
 func formatUser(user string) string {
