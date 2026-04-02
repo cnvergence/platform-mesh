@@ -92,7 +92,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     needs: [create-version, docker-build-push]
     uses: platform-mesh/.github/.github/workflows/job-sbom.yml@main
-    secrets: inherit
     with:
       imageReference: ghcr.io/platform-mesh/kcp-migration-operator:${{ needs.create-version.outputs.version }}
 
