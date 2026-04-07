@@ -33,7 +33,7 @@ func SetRequestId() func(http.Handler) http.Handler {
 }
 
 // SetRequestIdInLogger returns HTTP middleware that injects a request-scoped logger into the request context.
-// 
+//
 // The middleware loads the current logger from the request context, creates a per-request logger using
 // logger.NewRequestLoggerFromZerolog(ctx, log.Logger), and stores the resulting logger back into the context
 // before calling the next handler. This ensures handlers downstream receive a logger enriched for the current request.

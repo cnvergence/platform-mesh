@@ -47,12 +47,12 @@ func CaptureError(err error, tags Tags, extras ...Extras) {
 		sentryErr, ok := AsSentryError(err)
 		if ok {
 			scope.SetTags(sentryErr.tags)
-			scope.SetExtras(sentryErr.extras)
+			scope.SetContext("extras", sentry.Context(sentryErr.extras))
 		}
 
 		scope.SetTags(tags)
 		for _, extra := range extras {
-			scope.SetExtras(extra)
+			scope.SetContext("extras", sentry.Context(extra))
 		}
 
 		// set up a Sentry Event
