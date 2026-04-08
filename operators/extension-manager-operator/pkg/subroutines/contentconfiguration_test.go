@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jarcoal/httpmock"
-	golangCommonErrors "github.com/platform-mesh/golang-commons/errors"
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -126,18 +125,6 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestGetName_OK() {
 	suite.Equal(ContentConfigurationSubroutineName, result)
 }
 
-func (suite *ContentConfigurationSubroutineTestSuite) TestFinalize_OK() {
-	// Given
-	contentConfiguration := &cachev1alpha1.ContentConfiguration{}
-
-	// When
-	result, err := suite.testObj.Finalize(context.Background(), contentConfiguration)
-
-	// Then
-	suite.Assert().Zero(result.RequeueAfter)
-	suite.Nil(err)
-}
-
 func (suite *ContentConfigurationSubroutineTestSuite) TestProcessingConfig() {
 	remoteURL := "https://this-address-should-be-mocked-by-httpmock"
 
@@ -146,7 +133,7 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestProcessingConfig() {
 		spec                 cachev1alpha1.ContentConfigurationSpec
 		remoteURL            string
 		statusCode           int
-		expectedError        golangCommonErrors.OperatorError
+		expectedErr          string
 		expectedConfigResult string
 	}{
 		{
@@ -206,14 +193,14 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestProcessingConfig() {
 					URL: remoteURL,
 				},
 			},
-			remoteURL:     remoteURL,
-			statusCode:    http.StatusInternalServerError,
-			expectedError: golangCommonErrors.NewOperatorError(errors.New("received non-200 status code: 500"), false, true),
+			remoteURL:   remoteURL,
+			statusCode:  http.StatusInternalServerError,
+			expectedErr: "received non-200 status code: 500",
 		},
 		{
-			name:          "NoConfigProvider_Error",
-			spec:          cachev1alpha1.ContentConfigurationSpec{},
-			expectedError: golangCommonErrors.NewOperatorError(errors.New("no configuration provided"), false, true),
+			name:        "NoConfigProvider_Error",
+			spec:        cachev1alpha1.ContentConfigurationSpec{},
+			expectedErr: "no configuration provided",
 		},
 	}
 
@@ -235,13 +222,11 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestProcessingConfig() {
 			_, err := suite.testObj.Process(context.Background(), &contentConfiguration)
 
 			// Then
-			if tt.expectedError != nil {
-				if err == nil {
-					suite.Fail("expected error, but got nil")
-				}
-				suite.Require().Equal(tt.expectedError.Err().Error(), err.Err().Error())
+			if tt.expectedErr != "" {
+				suite.Require().Error(err)
+				suite.Require().Equal(tt.expectedErr, err.Error())
 			} else {
-				suite.Nil(err)
+				suite.Require().NoError(err)
 			}
 
 			if tt.expectedConfigResult == "" {
@@ -253,25 +238,6 @@ func (suite *ContentConfigurationSubroutineTestSuite) TestProcessingConfig() {
 			}
 		})
 	}
-}
-
-func (suite *ContentConfigurationSubroutineTestSuite) TestFinalizers_OK() {
-	// Given
-	contentConfiguration := &cachev1alpha1.ContentConfiguration{}
-
-	// When
-	result, err := suite.testObj.Finalize(context.Background(), contentConfiguration)
-
-	// Then
-	suite.Assert().Zero(result.RequeueAfter)
-	suite.Nil(err)
-
-	// When
-	finalizers := suite.testObj.Finalizers(contentConfiguration)
-
-	// Then
-	suite.Equal([]string{}, finalizers)
-
 }
 
 func TestService_Do(t *testing.T) {

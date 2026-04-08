@@ -7,13 +7,11 @@ import (
 	"io"
 	"net/http"
 
-	ctrl "sigs.k8s.io/controller-runtime"
-
-	"github.com/platform-mesh/golang-commons/controller/lifecycle/runtimeobject"
-	"github.com/platform-mesh/golang-commons/errors"
 	"github.com/platform-mesh/golang-commons/logger"
+	"github.com/platform-mesh/subroutines"
 	"k8s.io/apimachinery/pkg/api/meta"
 	apimachinery "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
 	"github.com/platform-mesh/extension-manager-operator/pkg/transformer"
@@ -29,15 +27,15 @@ const (
 	ConditionStatusFalse               = "False"
 )
 
+var _ subroutines.Processor = (*ContentConfigurationSubroutine)(nil)
+
 type ContentConfigurationSubroutine struct {
 	client      *http.Client
 	validator   validation.ExtensionConfiguration
 	transformer []transformer.ContentConfigurationTransformer
 }
 
-func NewContentConfigurationSubroutine(validator validation.ExtensionConfiguration,
-	client *http.Client) *ContentConfigurationSubroutine {
-
+func NewContentConfigurationSubroutine(validator validation.ExtensionConfiguration, client *http.Client) *ContentConfigurationSubroutine {
 	transformers := []transformer.ContentConfigurationTransformer{
 		&transformer.UrlSuffixTransformer{},
 	}
@@ -52,27 +50,20 @@ func (r *ContentConfigurationSubroutine) GetName() string {
 	return ContentConfigurationSubroutineName
 }
 
-func (r *ContentConfigurationSubroutine) Finalize(_ context.Context, _ runtimeobject.RuntimeObject) (ctrl.Result, errors.OperatorError) {
-	return ctrl.Result{}, nil
-}
-
-func (r *ContentConfigurationSubroutine) Finalizers(_ runtimeobject.RuntimeObject) []string {
-	return []string{}
-}
-
-func (r *ContentConfigurationSubroutine) Process(
-	ctx context.Context, runtimeObj runtimeobject.RuntimeObject,
-) (ctrl.Result, errors.OperatorError) {
+func (r *ContentConfigurationSubroutine) Process(ctx context.Context, obj client.Object) (subroutines.Result, error) {
 	log := logger.LoadLoggerFromContext(ctx)
 
-	instance := runtimeObj.(*v1alpha1.ContentConfiguration)
+	instance, ok := obj.(*v1alpha1.ContentConfiguration)
+	if !ok {
+		return subroutines.OK(), fmt.Errorf("expected *v1alpha1.ContentConfiguration, got %T", obj)
+	}
 
 	log.Debug().Str("name", instance.Name).Msg("processing content configuration")
 
 	// Download or Retrieve ContentConfiguration Json
 	contentType, rawConfig, err := r.retrieveContentConfigurationData(instance, log)
 	if err != nil {
-		return ctrl.Result{}, errors.NewOperatorError(err, true, false)
+		return subroutines.OK(), err
 	}
 
 	// Validate ContentConfiguration Json
@@ -86,7 +77,7 @@ func (r *ContentConfigurationSubroutine) Process(
 			Message: valErr.Error(),
 		}
 		meta.SetStatusCondition(&instance.Status.Conditions, condition)
-		return ctrl.Result{}, nil
+		return subroutines.OK(), nil
 	}
 
 	condition := apimachinery.Condition{
@@ -101,24 +92,24 @@ func (r *ContentConfigurationSubroutine) Process(
 	contentConfiguration := &validation.ContentConfiguration{}
 	err = json.Unmarshal([]byte(validatedConfig), contentConfiguration)
 	if err != nil {
-		return ctrl.Result{}, errors.NewOperatorError(errors.Wrap(err, "failed to unmarshal contentConfiguration"), false, false)
+		return subroutines.OK(), fmt.Errorf("failed to unmarshal contentConfiguration: %w", err)
 	}
 	for _, configurationTransformer := range r.transformer {
 		err := configurationTransformer.Transform(contentConfiguration, instance)
 		if err != nil {
-			return ctrl.Result{}, errors.NewOperatorError(errors.Wrap(err, "failed to transform contentConfiguration"), false, true)
+			return subroutines.OK(), fmt.Errorf("failed to transform contentConfiguration: %w", err)
 		}
 	}
 
 	validatedConfigBytes, err := json.Marshal(contentConfiguration)
 	if err != nil {
-		return ctrl.Result{}, errors.NewOperatorError(errors.Wrap(err, "failed to marshal contentConfiguration"), false, false)
+		return subroutines.OK(), fmt.Errorf("failed to marshal contentConfiguration: %w", err)
 	}
 	validatedConfig = string(validatedConfigBytes)
 
 	// Store resulting configuration in the status
 	instance.Status.ConfigurationResult = validatedConfig
-	return ctrl.Result{}, nil
+	return subroutines.OK(), nil
 }
 
 func (r *ContentConfigurationSubroutine) retrieveContentConfigurationData(instance *v1alpha1.ContentConfiguration, log *logger.Logger) (string, []byte, error) {
@@ -137,14 +128,13 @@ func (r *ContentConfigurationSubroutine) retrieveContentConfigurationData(instan
 		bytes, err := r.getRemoteConfig(url, log)
 		if err != nil {
 			log.Err(err).Msg("failed to fetch remote configuration")
-
 			return "", nil, err
 		}
 		log.Info().Msg("fetched remote configuration")
 		contentType = instance.Spec.RemoteConfiguration.ContentType
 		rawConfig = bytes
 	default:
-		return "", nil, errors.New("no configuration provided")
+		return "", nil, fmt.Errorf("no configuration provided")
 	}
 	return contentType, rawConfig, nil
 }

@@ -19,21 +19,17 @@ func (c *ServerConfig) AddFlags(fs *pflag.FlagSet) {
 }
 
 type OperatorConfig struct {
-	KCPEnabled                             bool
 	KCPAPIExportEndpointSliceName          string
 	SubroutinesContentConfigurationEnabled bool
 }
 
 func NewOperatorConfig() *OperatorConfig {
 	return &OperatorConfig{
-		KCPEnabled:                             false,
-		KCPAPIExportEndpointSliceName:          "core.platform-mesh.io",
 		SubroutinesContentConfigurationEnabled: true,
 	}
 }
 
 func (c *OperatorConfig) AddFlags(fs *pflag.FlagSet) {
-	fs.BoolVar(&c.KCPEnabled, "kcp-enabled", c.KCPEnabled, "Enable KCP mode")
-	fs.StringVar(&c.KCPAPIExportEndpointSliceName, "kcp-api-export-endpoint-slice-name", c.KCPAPIExportEndpointSliceName, "Set the KCP API export endpoint slice name")
+	fs.StringVar(&c.KCPAPIExportEndpointSliceName, "kcp-api-export-endpoint-slice-name", c.KCPAPIExportEndpointSliceName, "Optional APIExportEndpointSlice name to reconcile against")
 	fs.BoolVar(&c.SubroutinesContentConfigurationEnabled, "subroutines-content-configuration-enabled", c.SubroutinesContentConfigurationEnabled, "Enable the content configuration subroutine")
 }

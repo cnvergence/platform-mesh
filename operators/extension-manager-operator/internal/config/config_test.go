@@ -27,8 +27,7 @@ func TestServerConfig_AddFlags(t *testing.T) {
 func TestNewOperatorConfig(t *testing.T) {
 	cfg := NewOperatorConfig()
 
-	assert.False(t, cfg.KCPEnabled)
-	assert.Equal(t, "core.platform-mesh.io", cfg.KCPAPIExportEndpointSliceName)
+	assert.Equal(t, "", cfg.KCPAPIExportEndpointSliceName)
 	assert.True(t, cfg.SubroutinesContentConfigurationEnabled)
 }
 
@@ -38,13 +37,11 @@ func TestOperatorConfig_AddFlags(t *testing.T) {
 	cfg.AddFlags(fs)
 
 	err := fs.Parse([]string{
-		"--kcp-enabled=true",
 		"--kcp-api-export-endpoint-slice-name=custom.example.io",
 		"--subroutines-content-configuration-enabled=false",
 	})
 
 	assert.NoError(t, err)
-	assert.True(t, cfg.KCPEnabled)
 	assert.Equal(t, "custom.example.io", cfg.KCPAPIExportEndpointSliceName)
 	assert.False(t, cfg.SubroutinesContentConfigurationEnabled)
 }

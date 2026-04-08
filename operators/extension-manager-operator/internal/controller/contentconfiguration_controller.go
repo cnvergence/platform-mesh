@@ -14,26 +14,29 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package multiclusterruntime
+package controller
 
 import (
 	"context"
 	"net/http"
 
 	platformmeshconfig "github.com/platform-mesh/golang-commons/config"
-	"github.com/platform-mesh/golang-commons/controller/lifecycle/builder"
-	"github.com/platform-mesh/golang-commons/controller/lifecycle/multicluster"
-	"github.com/platform-mesh/golang-commons/controller/lifecycle/subroutine"
+	"github.com/platform-mesh/golang-commons/controller/filter"
 	"github.com/platform-mesh/golang-commons/logger"
+	"github.com/platform-mesh/subroutines"
+	"github.com/platform-mesh/subroutines/conditions"
+	"github.com/platform-mesh/subroutines/lifecycle"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	"github.com/platform-mesh/extension-manager-operator/api/v1alpha1"
 	"github.com/platform-mesh/extension-manager-operator/internal/config"
-	"github.com/platform-mesh/extension-manager-operator/internal/controller"
-	"github.com/platform-mesh/extension-manager-operator/pkg/subroutines"
+	extsub "github.com/platform-mesh/extension-manager-operator/pkg/subroutines"
 	"github.com/platform-mesh/extension-manager-operator/pkg/validation"
 )
 
@@ -41,26 +44,36 @@ var contentConfigurationReconcilerName = "ContentConfigurationReconcilerCR"
 
 // ContentConfigurationReconciler reconciles a ContentConfiguration object
 type ContentConfigurationReconciler struct {
-	lifecycle *multicluster.LifecycleManager
+	lifecycle *lifecycle.Lifecycle
 }
 
 func NewContentConfigurationReconciler(log *logger.Logger, mgr mcmanager.Manager, cfg config.OperatorConfig) *ContentConfigurationReconciler {
-	var subs []subroutine.Subroutine
+	var subs []subroutines.Subroutine
 	if cfg.SubroutinesContentConfigurationEnabled {
-		subs = append(subs, subroutines.NewContentConfigurationSubroutine(validation.NewContentConfiguration(), http.DefaultClient))
+		subs = append(subs, extsub.NewContentConfigurationSubroutine(validation.NewContentConfiguration(), http.DefaultClient))
 	}
-	return &ContentConfigurationReconciler{
-		lifecycle: builder.NewBuilder(controller.OperatorName, contentConfigurationReconcilerName, subs, log).
-			WithSpreadingReconciles().
-			WithConditionManagement().
-			BuildMultiCluster(mgr),
-	}
+	lc := lifecycle.New(mgr, contentConfigurationReconcilerName, func() client.Object {
+		return &v1alpha1.ContentConfiguration{}
+	}, subs...).
+		WithConditions(conditions.NewManager()).
+		WithSpread(contentConfigurationSpreadManager{}).
+		WithPrepareContext(func(ctx context.Context, obj client.Object) (context.Context, error) {
+			return logger.SetLoggerInContext(ctx, log.ComponentLogger("ContentConfiguration")), nil
+		})
+	return &ContentConfigurationReconciler{lifecycle: lc}
 }
 
 func (r *ContentConfigurationReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-	return r.lifecycle.Reconcile(ctx, req, &v1alpha1.ContentConfiguration{})
+	return r.lifecycle.Reconcile(ctx, req)
 }
 
 func (r *ContentConfigurationReconciler) SetupWithManager(mgr mcmanager.Manager, cfg *platformmeshconfig.CommonServiceConfig, log *logger.Logger, eventPredicates ...predicate.Predicate) error {
-	return r.lifecycle.SetupWithManager(mgr, cfg.MaxConcurrentReconciles, contentConfigurationReconcilerName, &v1alpha1.ContentConfiguration{}, cfg.DebugLabelValue, r, log, eventPredicates...)
+	opts := controller.TypedOptions[mcreconcile.Request]{MaxConcurrentReconciles: cfg.MaxConcurrentReconciles}
+	predicates := append([]predicate.Predicate{filter.DebugResourcesBehaviourPredicate(cfg.DebugLabelValue)}, eventPredicates...)
+	return mcbuilder.ControllerManagedBy(mgr).
+		Named(contentConfigurationReconcilerName).
+		For(&v1alpha1.ContentConfiguration{}).
+		WithOptions(opts).
+		WithEventFilter(predicate.And(predicates...)).
+		Complete(r)
 }

@@ -17,8 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"time"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -113,13 +111,4 @@ func (i *ContentConfiguration) SetObservedGeneration(g int64)     { i.Status.Obs
 func (i *ContentConfiguration) GetNextReconcileTime() metav1.Time { return i.Status.NextReconcileTime }
 func (i *ContentConfiguration) SetNextReconcileTime(time metav1.Time) {
 	i.Status.NextReconcileTime = time
-}
-
-// GenerateNextReconcileTime implements lifecycle.GenerateNextReconcileTimer.
-func (i *ContentConfiguration) GenerateNextReconcileTime() time.Duration {
-	if i.Spec.RemoteConfiguration != nil {
-		return 5 * time.Minute
-	}
-
-	return 24 * time.Hour
 }

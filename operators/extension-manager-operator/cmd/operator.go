@@ -25,8 +25,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/kcp-dev/multicluster-provider/apiexport"
+	"github.com/platform-mesh/extension-manager-operator/internal/controller"
 	platformmeshcontext "github.com/platform-mesh/golang-commons/context"
-	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/platform-mesh/golang-commons/traces"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -37,10 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
-
-	"github.com/platform-mesh/extension-manager-operator/internal/config"
-	"github.com/platform-mesh/extension-manager-operator/internal/controller/controllerruntime"
-	"github.com/platform-mesh/extension-manager-operator/internal/controller/multiclusterruntime"
+	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 )
 
 var operatorCmd = &cobra.Command{
@@ -57,74 +54,62 @@ func RunController(_ *cobra.Command, _ []string) { // coverage-ignore
 	defer shutdown()
 
 	var err error
-	var providerShutdown func(ctx context.Context) error
+	var traceProviderShutdown func(ctx context.Context) error
 	if defaultCfg.Tracing.Enabled {
-		providerShutdown, err = traces.InitProvider(ctx, defaultCfg.Tracing.Collector)
+		traceProviderShutdown, err = traces.InitProvider(ctx, defaultCfg.Tracing.Collector)
 		if err != nil {
 			log.Fatal().Err(err).Msg("unable to start gRPC-Sidecar TracerProvider")
 		}
 	} else {
-		providerShutdown, err = traces.InitLocalProvider(ctx, defaultCfg.Tracing.Collector, false)
+		traceProviderShutdown, err = traces.InitLocalProvider(ctx, defaultCfg.Tracing.Collector, false)
 		if err != nil {
 			log.Fatal().Err(err).Msg("unable to start local TracerProvider")
 		}
 	}
-
 	defer func() {
-		if err := providerShutdown(ctx); err != nil {
+		if err := traceProviderShutdown(ctx); err != nil {
 			log.Fatal().Err(err).Msg("failed to shutdown TracerProvider")
 		}
 	}()
 
 	kubeconfigPath := os.Getenv("KUBECONFIG")
-	var restCfg *rest.Config
+	var reconcileCfg *rest.Config
 	if kubeconfigPath != "" {
-		var err error
-		restCfg, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		reconcileCfg, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 		if err != nil {
 			log.Fatal().Err(err).Msg("unable to load kubeconfig from KUBECONFIG env var")
 		}
 	} else {
 		log.Info().Msg("KUBECONFIG not set, using GetConfigOrDie()")
-		restCfg = ctrl.GetConfigOrDie()
+		reconcileCfg = ctrl.GetConfigOrDie()
 	}
-	restCfg.Wrap(func(rt http.RoundTripper) http.RoundTripper {
+	reconcileCfg.Wrap(func(rt http.RoundTripper) http.RoundTripper {
 		return otelhttp.NewTransport(rt)
 	})
 
-	if operatorCfg.KCPEnabled {
-		log.Info().Msg("KCP mode enabled, initializing multicluster manager")
-		// Leader election: same as account-operator and security-operator — use in-cluster config for the lease; Fatal if not in cluster.
-		var leaderElectionCfg *rest.Config
-		if defaultCfg.LeaderElectionEnabled {
-			leaderElectionCfg, err = rest.InClusterConfig()
-			if err != nil {
-				log.Fatal().Err(err).Msg("unable to get in-cluster config for leader election")
-			}
+	var leaderElectionCfg *rest.Config
+	if defaultCfg.LeaderElectionEnabled {
+		leaderElectionCfg, err = rest.InClusterConfig()
+		if err != nil {
+			log.Fatal().Err(err).Msg("unable to get in-cluster config for leader election")
 		}
-		initializeMultiClusterManager(ctx, leaderElectionCfg, restCfg, log, *operatorCfg)
-	} else {
-		log.Info().Msg("KCP mode disabled, using standard controller-runtime manager")
-		initializeControllerRuntimeManager(ctx, restCfg)
 	}
-}
 
-func initializeMultiClusterManager(ctx context.Context, leaderElectionCfg *rest.Config, kcpCfg *rest.Config, log *logger.Logger, operatorCfg config.OperatorConfig) {
-	log.Info().Msg("Initializing multicluster manager")
-	kcpCfg.Wrap(func(rt http.RoundTripper) http.RoundTripper {
-		return otelhttp.NewTransport(rt)
-	})
+	var mcProvider multicluster.Provider
+	if operatorCfg.KCPAPIExportEndpointSliceName != "" {
+		var p *apiexport.Provider
+		p, err = apiexport.New(reconcileCfg, operatorCfg.KCPAPIExportEndpointSliceName, apiexport.Options{
+			Scheme: scheme,
+		})
+		if err != nil {
+			log.Fatal().Err(err).Msg("unable to construct APIExportProvider")
+		}
+		log.Info().Msgf("Using APIExportProvider with EndpointSlice %s", operatorCfg.KCPAPIExportEndpointSliceName)
 
-	endpointSliceName := operatorCfg.KCPAPIExportEndpointSliceName
-	provider, err := apiexport.New(kcpCfg, endpointSliceName, apiexport.Options{
-		Scheme: scheme,
-	})
-	if err != nil {
-		log.Fatal().Err(err).Msg("unable to construct cluster provider")
+		mcProvider = p
 	}
-	log.Info().Str("endpointSliceName", endpointSliceName).Msg("KCP cluster provider created")
 
-	mgr, err := mcmanager.New(kcpCfg, provider, manager.Options{
+	mgr, err := mcmanager.New(reconcileCfg, mcProvider, manager.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: defaultCfg.Metrics.BindAddress,
@@ -143,11 +128,10 @@ func initializeMultiClusterManager(ctx context.Context, leaderElectionCfg *rest.
 		log.Fatal().Err(err).Msg("unable to set up overall controller manager")
 	}
 
-	contentConfigurationReconciler := multiclusterruntime.NewContentConfigurationReconciler(log, mgr, operatorCfg)
+	contentConfigurationReconciler := controller.NewContentConfigurationReconciler(log, mgr, *operatorCfg)
 	if err := contentConfigurationReconciler.SetupWithManager(mgr, defaultCfg, log); err != nil {
 		log.Fatal().Err(err).Str("controller", "ContentConfiguration").Msg("unable to create controller")
 	}
-	log.Info().Str("controller", "ContentConfiguration").Msg("ContentConfiguration controller registered with multicluster manager")
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		log.Fatal().Err(err).Msg("unable to set up health check")
@@ -156,49 +140,8 @@ func initializeMultiClusterManager(ctx context.Context, leaderElectionCfg *rest.
 		log.Fatal().Err(err).Msg("unable to set up ready check")
 	}
 
-	log.Info().Msg("starting multicluster manager")
 	startCtx := ctrl.SetupSignalHandler()
 	if err := mgr.Start(startCtx); err != nil {
-		log.Fatal().Err(err).Msg("problem running manager")
-	}
-}
-
-func initializeControllerRuntimeManager(ctx context.Context, restCfg *rest.Config) {
-	mgr, err := ctrl.NewManager(restCfg, ctrl.Options{
-		Scheme: scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: defaultCfg.Metrics.BindAddress,
-			TLSOpts: []func(*tls.Config){
-				func(c *tls.Config) {
-					log.Info().Msg("disabling http/2")
-					c.NextProtos = []string{"http/1.1"}
-				},
-			},
-		},
-		BaseContext:                   func() context.Context { return ctx },
-		HealthProbeBindAddress:        defaultCfg.HealthProbeBindAddress,
-		LeaderElection:                defaultCfg.LeaderElectionEnabled,
-		LeaderElectionID:              "eengiex4.platform-mesh.io",
-		LeaderElectionReleaseOnCancel: true,
-	})
-	if err != nil {
-		log.Fatal().Err(err).Msg("unable to start manager")
-	}
-
-	contentConfigurationReconciler := controllerruntime.NewContentConfigurationReconcilerCR(log, mgr, *operatorCfg)
-	if err := contentConfigurationReconciler.SetupWithManager(mgr, defaultCfg, log); err != nil {
-		log.Fatal().Err(err).Str("controller", "ContentConfiguration").Msg("unable to create controller")
-	}
-
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		log.Fatal().Err(err).Msg("unable to set up health check")
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		log.Fatal().Err(err).Msg("unable to set up ready check")
-	}
-
-	log.Info().Msg("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		log.Fatal().Err(err).Msg("problem running manager")
 	}
 }
