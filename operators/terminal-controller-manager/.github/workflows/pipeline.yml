@@ -162,3 +162,21 @@ jobs:
       chart: terminal-controller-manager
       appVersion: ${{ needs.create-version.outputs.version }}
       targetRepository: platform-mesh/helm-charts
+
+  sbom:
+    if: github.ref == 'refs/heads/main'
+    needs: [create-version, docker-build-push]
+    uses: platform-mesh/.github/.github/workflows/job-sbom.yml@main
+    with:
+      imageReference: ghcr.io/platform-mesh/terminal-controller-manager:${{ needs.create-version.outputs.version }}
+
+  image-ocm:
+    if: github.ref == 'refs/heads/main'
+    needs: [create-version, docker-build-push, sbom]
+    uses: platform-mesh/.github/.github/workflows/job-image-ocm.yml@main
+    secrets: inherit
+    with:
+      imageReference: ghcr.io/platform-mesh/terminal-controller-manager:${{ needs.create-version.outputs.version }}
+      appVersion: ${{ needs.create-version.outputs.version }}
+      repoName: terminal-controller-manager
+      commit: ${{ github.sha }}
