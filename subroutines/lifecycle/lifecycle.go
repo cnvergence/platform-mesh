@@ -163,7 +163,7 @@ func (l *Lifecycle) Reconcile(ctx context.Context, req mcreconcile.Request) (rec
 
 	span.SetAttributes(
 		attribute.String("controller", l.controllerName),
-		attribute.String("cluster", req.ClusterName),
+		attribute.String("cluster", req.ClusterName.String()),
 		attribute.String("name", obj.GetName()),
 		attribute.String("namespace", obj.GetNamespace()),
 		attribute.Int64("generation", generation),
