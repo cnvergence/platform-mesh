@@ -29,6 +29,12 @@ task mockery
 ``` 
 P.S. If you have golang installed, it automatically installs the mockery binary in `golang-commons/bin` directory.
 
+## Generative AI
+
+If you use generative AI tools while preparing a contribution, you remain responsible for the correctness, safety, licensing, and maintainability of the submitted change.
+
+If you use Claude while contributing, do not assume it will automatically pick up this repository's `AGENTS.md`. Explicitly provide or reference `AGENTS.md` at the start of the session so Claude has the repository-specific instructions before it suggests or applies changes.
+
 ## Issues
 We use GitHub issues to track bugs. Please ensure your description is
 clear and includes sufficient instructions to reproduce the issue.
