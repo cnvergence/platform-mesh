@@ -146,6 +146,13 @@ tasks:
       - kubectl rollout restart deployment/{{.DEPLOYMENT_NAME}} -n {{.DEPLOYMENT_NAMESPACE}}
       - echo "Image loaded and deployment restarted"
 
+  fuzz:
+    desc: "Run fuzz tests with a configurable duration (default 30s per target)"
+    vars:
+      FUZZTIME: '{{.FUZZTIME | default "30s"}}'
+    cmds:
+      - go test ./api/v1alpha1/ -run=^$ -fuzz=FuzzTerminalRoundTrip -fuzztime={{.FUZZTIME}} -count=1
+
   test-ui:
     desc: "Serve test UI for WebSocket testing"
     cmds:
