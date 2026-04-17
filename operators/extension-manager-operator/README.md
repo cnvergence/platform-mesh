@@ -3,6 +3,7 @@
 
 # Platform Mesh - Extension Manager Operator
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/platform-mesh/extension-manager-operator/badge)](https://scorecard.dev/viewer/?uri=github.com/platform-mesh/extension-manager-operator)
 ![Build Status](https://github.com/platform-mesh/extension-manager-operator/actions/workflows/pipeline.yml/badge.svg)
 [![REUSE status](
 https://api.reuse.software/badge/github.com/platform-mesh/extension-manager-operator)](https://api.reuse.software/info/github.com/platform-mesh/extension-manager-operator)
