@@ -1,5 +1,6 @@
 # Platform Mesh - subroutines
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/platform-mesh/subroutines/badge)](https://scorecard.dev/viewer/?uri=github.com/platform-mesh/subroutines)
 [![CI](https://github.com/platform-mesh/subroutines/actions/workflows/pipeline.yml/badge.svg)](https://github.com/platform-mesh/subroutines/actions/workflows/pipeline.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/platform-mesh/subroutines.svg)](https://pkg.go.dev/github.com/platform-mesh/subroutines)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
