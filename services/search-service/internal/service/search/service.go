@@ -61,7 +61,9 @@ func NewService(
 func (s *Service) Search(ctx context.Context, req SearchRequest) (SearchResponse, error) {
 	start := time.Now()
 	s.metrics.IncSearchRequests()
-	defer s.metrics.ObserveSearchDuration(time.Since(start))
+	defer func() {
+		s.metrics.ObserveSearchDuration(time.Since(start))
+	}()
 
 	log := logger.LoadLoggerFromContext(ctx)
 
