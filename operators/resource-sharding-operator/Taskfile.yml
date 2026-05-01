@@ -1,0 +1,69 @@
+version: '3'
+
+vars:
+  LOCAL_BIN: bin
+  GOLANGCI_LINT_VERSION: v2.8.0
+  CONTROLLER_TOOLS_VERSION: v0.20.0
+  ENVTEST_K8S_VERSION: "1.29.0"
+  CRD_DIRECTORY: config/crd
+  GOARCH:
+    sh: go env GOARCH
+  GOOS:
+    sh: go env GOOS
+
+tasks:
+  setup:controller-gen:
+    internal: true
+    cmds:
+      - test -s {{.LOCAL_BIN}}/controller-gen || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_TOOLS_VERSION}}
+  setup:golangci-lint:
+    internal: true
+    cmds:
+      - test -s {{.LOCAL_BIN}}/golangci-lint || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+
+  manifests:
+    deps: [setup:controller-gen]
+    cmds:
+      - "{{.LOCAL_BIN}}/controller-gen rbac:roleName=manager-role crd paths=./... output:crd:artifacts:config={{.CRD_DIRECTORY}}"
+  generate:
+    cmds:
+      - task: manifests
+      - "{{.LOCAL_BIN}}/controller-gen object:headerFile=hack/boilerplate.go.txt paths=./..."
+  fmt:
+    cmds:
+      - go fmt ./...
+  lint:
+    deps: [setup:golangci-lint]
+    cmds:
+      - task: fmt
+      - "{{.LOCAL_BIN}}/golangci-lint run --timeout 15m ./..."
+  test:
+    cmds:
+      - go test ./... {{.ADDITIONAL_COMMAND_ARGS}}
+  cover:
+    cmds:
+      - task: test
+        vars:
+          ADDITIONAL_COMMAND_ARGS: -v -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+  build:
+    cmds:
+      - CGO_ENABLED=0 go build -ldflags '-w -s' -o bin/manager main.go
+  docker-build:
+    cmds:
+      - docker build .
+  docker:kind:
+    desc: "Build container image and load into Kind cluster"
+    vars:
+      KIND_CLUSTER: '{{.KIND_CLUSTER | default "platform-mesh"}}'
+      DEPLOYMENT_NAME: '{{.DEPLOYMENT_NAME | default "resource-sharding-operator"}}'
+      DEPLOYMENT_NAMESPACE: '{{.DEPLOYMENT_NAMESPACE | default "platform-mesh-system"}}'
+      IMAGE_TAG:
+        sh: kubectl get deployment {{.DEPLOYMENT_NAME}} -n {{.DEPLOYMENT_NAMESPACE}} -o jsonpath='{.spec.template.spec.containers[0].image}' | cut -d':' -f2
+    cmds:
+      - docker build -t ghcr.io/platform-mesh/resource-sharding-operator:{{.IMAGE_TAG}} .
+      - kind load docker-image ghcr.io/platform-mesh/resource-sharding-operator:{{.IMAGE_TAG}} --name {{.KIND_CLUSTER}}
+      - kubectl rollout restart deployment/{{.DEPLOYMENT_NAME}} -n {{.DEPLOYMENT_NAMESPACE}}
+  validate:
+    cmds:
+      - task: lint
+      - task: test
