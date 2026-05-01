@@ -1,0 +1,279 @@
+package controller
+
+import (
+	"fmt"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+)
+
+func (s *ResourceShardingSuite) TestHappyPath() {
+	rs := &v1alpha1.ResourceSharding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-happy-path",
+		},
+		Spec: v1alpha1.ResourceShardingSpec{
+			Target: v1alpha1.TargetResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "configmaps",
+			},
+			ShardLabelKey: "test.sharding.io/shard",
+			Shards: []v1alpha1.ShardRef{
+				{Name: "shard-a"},
+				{Name: "shard-b"},
+				{Name: "shard-c"},
+			},
+			Rebalance: v1alpha1.RebalanceConfig{
+				Interval: metav1.Duration{Duration: 1 * time.Minute},
+			},
+		},
+	}
+
+	s.Require().NoError(s.k8sClient.Create(s.ctx, rs))
+	defer func() {
+		_ = s.k8sClient.Delete(s.ctx, rs)
+	}()
+
+	// Wait for Ready condition
+	s.Eventually(func() bool {
+		var fetched v1alpha1.ResourceSharding
+		if err := s.k8sClient.Get(s.ctx, types.NamespacedName{Name: rs.Name}, &fetched); err != nil {
+			return false
+		}
+		for _, c := range fetched.Status.Conditions {
+			if c.Type == "Ready" && c.Status == metav1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	}, testTimeout, testInterval, "ResourceSharding should become Ready")
+
+	// Create unlabeled configmaps in a test namespace
+	ns := &unstructured.Unstructured{}
+	ns.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Namespace"})
+	ns.SetName("test-happy-path")
+	_ = s.k8sClient.Create(s.ctx, ns)
+	defer func() {
+		_ = s.k8sClient.Delete(s.ctx, ns)
+	}()
+
+	for i := range 9 {
+		cm := &unstructured.Unstructured{}
+		cm.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+		cm.SetName(fmt.Sprintf("test-cm-%d", i))
+		cm.SetNamespace("test-happy-path")
+		cm.Object["data"] = map[string]interface{}{"key": "value"}
+		s.Require().NoError(s.k8sClient.Create(s.ctx, cm))
+	}
+	defer func() {
+		for i := range 9 {
+			cm := &unstructured.Unstructured{}
+			cm.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+			cm.SetName(fmt.Sprintf("test-cm-%d", i))
+			cm.SetNamespace("test-happy-path")
+			_ = s.k8sClient.Delete(s.ctx, cm)
+		}
+	}()
+
+	// Wait for all 9 configmaps to get shard labels
+	s.Eventually(func() bool {
+		labeled := 0
+		for _, shard := range []string{"shard-a", "shard-b", "shard-c"} {
+			list := &unstructured.UnstructuredList{}
+			list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+			if err := s.k8sClient.List(s.ctx, list,
+				client.InNamespace("test-happy-path"),
+				client.MatchingLabels{"test.sharding.io/shard": shard}); err != nil {
+				return false
+			}
+			labeled += len(list.Items)
+		}
+		return labeled == 9
+	}, testTimeout, testInterval, "All 9 configmaps should have shard labels")
+
+	// Verify distribution is roughly even (each shard has 2-4)
+	for _, shard := range []string{"shard-a", "shard-b", "shard-c"} {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+		err := s.k8sClient.List(s.ctx, list,
+			client.InNamespace("test-happy-path"),
+			client.MatchingLabels{"test.sharding.io/shard": shard})
+		s.Require().NoError(err)
+		s.GreaterOrEqual(len(list.Items), 2, "shard %s should have at least 2", shard)
+		s.LessOrEqual(len(list.Items), 4, "shard %s should have at most 4", shard)
+	}
+}
+
+func (s *ResourceShardingSuite) TestSelfHealing() {
+	rs := &v1alpha1.ResourceSharding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-self-healing",
+		},
+		Spec: v1alpha1.ResourceShardingSpec{
+			Target: v1alpha1.TargetResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "configmaps",
+			},
+			ShardLabelKey: "test.healing.io/shard",
+			Shards: []v1alpha1.ShardRef{
+				{Name: "shard-x"},
+				{Name: "shard-y"},
+			},
+			Rebalance: v1alpha1.RebalanceConfig{
+				Interval: metav1.Duration{Duration: 1 * time.Minute},
+			},
+		},
+	}
+
+	s.Require().NoError(s.k8sClient.Create(s.ctx, rs))
+	defer func() {
+		_ = s.k8sClient.Delete(s.ctx, rs)
+	}()
+
+	// Create a configmap
+	cm := &unstructured.Unstructured{}
+	cm.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+	cm.SetName("test-heal-cm")
+	cm.SetNamespace("default")
+	cm.Object["data"] = map[string]interface{}{"key": "value"}
+	s.Require().NoError(s.k8sClient.Create(s.ctx, cm))
+	defer func() {
+		_ = s.k8sClient.Delete(s.ctx, cm)
+	}()
+
+	// Wait for label assignment
+	s.Eventually(func() bool {
+		var fetched unstructured.Unstructured
+		fetched.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+		if err := s.k8sClient.Get(s.ctx, types.NamespacedName{Name: "test-heal-cm", Namespace: "default"}, &fetched); err != nil {
+			return false
+		}
+		_, exists := fetched.GetLabels()["test.healing.io/shard"]
+		return exists
+	}, testTimeout, testInterval, "ConfigMap should get shard label")
+
+	// Remove the label
+	var fetched unstructured.Unstructured
+	fetched.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+	s.Require().NoError(s.k8sClient.Get(s.ctx, types.NamespacedName{Name: "test-heal-cm", Namespace: "default"}, &fetched))
+
+	labels := fetched.GetLabels()
+	delete(labels, "test.healing.io/shard")
+	fetched.SetLabels(labels)
+	s.Require().NoError(s.k8sClient.Update(s.ctx, &fetched))
+
+	// Verify label gets reassigned
+	s.Eventually(func() bool {
+		var refetched unstructured.Unstructured
+		refetched.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"})
+		if err := s.k8sClient.Get(s.ctx, types.NamespacedName{Name: "test-heal-cm", Namespace: "default"}, &refetched); err != nil {
+			return false
+		}
+		_, exists := refetched.GetLabels()["test.healing.io/shard"]
+		return exists
+	}, testTimeout, testInterval, "ConfigMap should get shard label reassigned after removal")
+}
+
+func (s *ResourceShardingSuite) TestUniquenessValidation() {
+	rs1 := &v1alpha1.ResourceSharding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-unique-1",
+		},
+		Spec: v1alpha1.ResourceShardingSpec{
+			Target: v1alpha1.TargetResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "secrets",
+			},
+			ShardLabelKey: "test.unique.io/shard",
+			Shards:        []v1alpha1.ShardRef{{Name: "s1"}},
+			Rebalance: v1alpha1.RebalanceConfig{
+				Interval: metav1.Duration{Duration: 5 * time.Minute},
+			},
+		},
+	}
+	rs2 := &v1alpha1.ResourceSharding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-unique-2",
+		},
+		Spec: v1alpha1.ResourceShardingSpec{
+			Target: v1alpha1.TargetResource{
+				Group:    "",
+				Version:  "v1",
+				Resource: "secrets",
+			},
+			ShardLabelKey: "test.unique.io/shard",
+			Shards:        []v1alpha1.ShardRef{{Name: "s2"}},
+			Rebalance: v1alpha1.RebalanceConfig{
+				Interval: metav1.Duration{Duration: 5 * time.Minute},
+			},
+		},
+	}
+
+	s.Require().NoError(s.k8sClient.Create(s.ctx, rs1))
+	s.Require().NoError(s.k8sClient.Create(s.ctx, rs2))
+	defer func() {
+		_ = s.k8sClient.Delete(s.ctx, rs1)
+		_ = s.k8sClient.Delete(s.ctx, rs2)
+	}()
+
+	// Second ResourceSharding should get Conflict condition
+	s.Eventually(func() bool {
+		var fetched v1alpha1.ResourceSharding
+		if err := s.k8sClient.Get(s.ctx, types.NamespacedName{Name: rs2.Name}, &fetched); err != nil {
+			return false
+		}
+		for _, c := range fetched.Status.Conditions {
+			if c.Type == "Conflict" && c.Status == metav1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	}, testTimeout, testInterval, "Second ResourceSharding should have Conflict condition")
+}
+
+func (s *ResourceShardingSuite) TestTargetNotFound() {
+	rs := &v1alpha1.ResourceSharding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-not-found",
+		},
+		Spec: v1alpha1.ResourceShardingSpec{
+			Target: v1alpha1.TargetResource{
+				Group:    "nonexistent.example.io",
+				Version:  "v1",
+				Resource: "fakes",
+			},
+			ShardLabelKey: "test.notfound.io/shard",
+			Shards:        []v1alpha1.ShardRef{{Name: "s1"}},
+			Rebalance: v1alpha1.RebalanceConfig{
+				Interval: metav1.Duration{Duration: 5 * time.Minute},
+			},
+		},
+	}
+
+	s.Require().NoError(s.k8sClient.Create(s.ctx, rs))
+	defer func() {
+		_ = s.k8sClient.Delete(s.ctx, rs)
+	}()
+
+	s.Eventually(func() bool {
+		var fetched v1alpha1.ResourceSharding
+		if err := s.k8sClient.Get(s.ctx, types.NamespacedName{Name: rs.Name}, &fetched); err != nil {
+			return false
+		}
+		for _, c := range fetched.Status.Conditions {
+			if c.Type == "TargetNotFound" && c.Status == metav1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	}, testTimeout, testInterval, "ResourceSharding should have TargetNotFound condition")
+}
