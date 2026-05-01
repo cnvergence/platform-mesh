@@ -29,13 +29,13 @@ kcp:
 
 metrics:
   # -- Metrics bind address
-  bindAddress: ":8080"
+  bindAddress: ":9090"
   # -- Enable secure serving for metrics
   secure: true
 
 health:
   # -- Health probe bind address
-  bindAddress: ":8081"
+  bindAddress: ":8090"
 
 resources:
   limits:

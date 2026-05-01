@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 
@@ -54,15 +55,7 @@ func RunController(_ *cobra.Command, _ []string) {
 		}
 	}
 
-	provider, err := apiexport.New(restCfg, operatorCfg.Kcp.ApiExportEndpointSliceName, apiexport.Options{
-		Log:    &ctrl.Log,
-		Scheme: scheme,
-	})
-	if err != nil {
-		log.Fatal().Err(err).Msg("creating APIExport provider")
-	}
-
-	mgr, err := mcmanager.New(restCfg, provider, mcmanager.Options{
+	mgrOpts := manager.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress:   defaultCfg.Metrics.BindAddress,
@@ -75,7 +68,25 @@ func RunController(_ *cobra.Command, _ []string) {
 		LeaderElectionID:              "resource-sharding.platform-mesh.io",
 		LeaderElectionConfig:          leaderCfg,
 		LeaderElectionReleaseOnCancel: true,
-	})
+	}
+
+	var mgr ctrl.Manager
+	if operatorCfg.Kcp.Enabled {
+		provider, providerErr := apiexport.New(restCfg, operatorCfg.Kcp.ApiExportEndpointSliceName, apiexport.Options{
+			Log:    &ctrl.Log,
+			Scheme: scheme,
+		})
+		if providerErr != nil {
+			log.Fatal().Err(providerErr).Msg("creating APIExport provider")
+		}
+		mcMgr, mcErr := mcmanager.New(restCfg, provider, mcmanager.Options(mgrOpts))
+		if mcErr != nil {
+			log.Fatal().Err(mcErr).Msg("unable to start multicluster manager")
+		}
+		mgr = mcMgr.GetLocalManager()
+	} else {
+		mgr, err = ctrl.NewManager(restCfg, mgrOpts)
+	}
 	if err != nil {
 		log.Fatal().Err(err).Msg("unable to start manager")
 	}

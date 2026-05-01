@@ -15,55 +15,54 @@ tasks:
   setup:controller-gen:
     internal: true
     cmds:
-      - test -s {{.LOCAL_BIN}}/controller-gen || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_TOOLS_VERSION}}
+    - test -s {{.LOCAL_BIN}}/controller-gen || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_TOOLS_VERSION}}
   setup:golangci-lint:
     internal: true
     cmds:
-      - test -s {{.LOCAL_BIN}}/golangci-lint || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+    - test -s {{.LOCAL_BIN}}/golangci-lint || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
 
   manifests:
-    deps: [setup:controller-gen]
+    deps: [ setup:controller-gen ]
     cmds:
-      - "{{.LOCAL_BIN}}/controller-gen rbac:roleName=manager-role crd paths=./... output:crd:artifacts:config={{.CRD_DIRECTORY}}"
+    - "{{.LOCAL_BIN}}/controller-gen rbac:roleName=manager-role crd paths=./... output:crd:artifacts:config={{.CRD_DIRECTORY}}"
   generate:
     cmds:
-      - task: manifests
-      - "{{.LOCAL_BIN}}/controller-gen object:headerFile=hack/boilerplate.go.txt paths=./..."
+    - task: manifests
+    - "{{.LOCAL_BIN}}/controller-gen object:headerFile=hack/boilerplate.go.txt paths=./..."
   fmt:
     cmds:
-      - go fmt ./...
+    - go fmt ./...
   lint:
-    deps: [setup:golangci-lint]
+    deps: [ setup:golangci-lint ]
     cmds:
-      - task: fmt
-      - "{{.LOCAL_BIN}}/golangci-lint run --timeout 15m ./..."
+    - task: fmt
+    - "{{.LOCAL_BIN}}/golangci-lint run --timeout 15m ./..."
   test:
     cmds:
-      - go test ./... {{.ADDITIONAL_COMMAND_ARGS}}
+    - go test ./... {{.ADDITIONAL_COMMAND_ARGS}}
   cover:
     cmds:
-      - task: test
-        vars:
-          ADDITIONAL_COMMAND_ARGS: -v -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
+    - task: test
+      vars:
+        ADDITIONAL_COMMAND_ARGS: -v -coverprofile=./cover.out -covermode=atomic -coverpkg=./...
   build:
     cmds:
-      - CGO_ENABLED=0 go build -ldflags '-w -s' -o bin/manager main.go
+    - CGO_ENABLED=0 go build -ldflags '-w -s' -o bin/manager main.go
   docker-build:
     cmds:
-      - docker build .
+    - docker build .
   docker:kind:
     desc: "Build container image and load into Kind cluster"
     vars:
-      KIND_CLUSTER: '{{.KIND_CLUSTER | default "platform-mesh"}}'
+      KIND_CLUSTER: '{{.KIND_CLUSTER | default "aegir-remote"}}'
       DEPLOYMENT_NAME: '{{.DEPLOYMENT_NAME | default "resource-sharding-operator"}}'
-      DEPLOYMENT_NAMESPACE: '{{.DEPLOYMENT_NAMESPACE | default "platform-mesh-system"}}'
-      IMAGE_TAG:
-        sh: kubectl get deployment {{.DEPLOYMENT_NAME}} -n {{.DEPLOYMENT_NAMESPACE}} -o jsonpath='{.spec.template.spec.containers[0].image}' | cut -d':' -f2
+      DEPLOYMENT_NAMESPACE: '{{.DEPLOYMENT_NAMESPACE | default "aegir-system"}}'
+      IMAGE_TAG: '{{.IMAGE_TAG | default "dev"}}'
     cmds:
-      - docker build -t ghcr.io/platform-mesh/resource-sharding-operator:{{.IMAGE_TAG}} .
-      - kind load docker-image ghcr.io/platform-mesh/resource-sharding-operator:{{.IMAGE_TAG}} --name {{.KIND_CLUSTER}}
-      - kubectl rollout restart deployment/{{.DEPLOYMENT_NAME}} -n {{.DEPLOYMENT_NAMESPACE}}
+    - docker build -t ghcr.io/platform-mesh/resource-sharding-operator:{{.IMAGE_TAG}} .
+    - kind load docker-image ghcr.io/platform-mesh/resource-sharding-operator:{{.IMAGE_TAG}} --name {{.KIND_CLUSTER}}
+    - kubectl rollout restart deployment/{{.DEPLOYMENT_NAME}} -n {{.DEPLOYMENT_NAMESPACE}}
   validate:
     cmds:
-      - task: lint
-      - task: test
+    - task: lint
+    - task: test

@@ -23,7 +23,7 @@ type RebalanceResult struct {
 type Rebalancer struct {
 	Client   client.Client
 	LabelKey string
-	GVR      schema.GroupVersionResource
+	GVK      schema.GroupVersionKind
 	Shards   []string
 	Config   v1alpha1.RebalanceConfig
 }
@@ -70,11 +70,7 @@ func (r *Rebalancer) countPerShard(ctx context.Context) (map[string]int, error) 
 		}
 
 		list := &metav1.PartialObjectMetadataList{}
-		list.SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   r.GVR.Group,
-			Version: r.GVR.Version,
-			Kind:    r.GVR.Resource,
-		})
+		list.SetGroupVersionKind(r.GVK)
 
 		if err := r.Client.List(ctx, list,
 			client.MatchingLabelsSelector{Selector: selector},
@@ -100,11 +96,7 @@ func (r *Rebalancer) cleanupOrphans(ctx context.Context, validCounts map[string]
 	}
 
 	list := &metav1.PartialObjectMetadataList{}
-	list.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   r.GVR.Group,
-		Version: r.GVR.Version,
-		Kind:    r.GVR.Resource,
-	})
+	list.SetGroupVersionKind(r.GVK)
 
 	if err := r.Client.List(ctx, list,
 		client.MatchingLabelsSelector{Selector: selector},
@@ -215,11 +207,7 @@ func (r *Rebalancer) rebalance(ctx context.Context, counts map[string]int) (int,
 		}
 
 		list := &metav1.PartialObjectMetadataList{}
-		list.SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   r.GVR.Group,
-			Version: r.GVR.Version,
-			Kind:    r.GVR.Resource,
-		})
+		list.SetGroupVersionKind(r.GVK)
 
 		limit := maxMoves - moved
 		if limit > excess {

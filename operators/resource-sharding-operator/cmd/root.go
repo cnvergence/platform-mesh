@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	kcpapisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
 	platformmeshcontext "github.com/platform-mesh/golang-commons/config"
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/spf13/cobra"
@@ -27,6 +28,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(kcpapisv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 
 	rootCmd.AddCommand(operatorCmd)

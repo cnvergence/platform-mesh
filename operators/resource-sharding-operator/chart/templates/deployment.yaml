@@ -39,17 +39,17 @@ spec:
           args:
             - operator
             {{- if .Values.leaderElection.enabled }}
-            - --leader-election-enabled
+            - --leader-elect
             {{- end }}
             - --metrics-bind-address={{ .Values.metrics.bindAddress }}
             - --health-probe-bind-address={{ .Values.health.bindAddress }}
             - --kcp-api-export-endpoint-slice-name={{ .Values.kcp.apiExportEndpointSliceName }}
           ports:
             - name: metrics
-              containerPort: 8080
+              containerPort: 9090
               protocol: TCP
             - name: health
-              containerPort: 8081
+              containerPort: 8090
               protocol: TCP
           livenessProbe:
             httpGet:

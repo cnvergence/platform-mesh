@@ -122,10 +122,17 @@ func (r *ResourceShardingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
+	// Resolve GVR → GVK for the rebalancer
+	gvk, err := r.Manager.GetRESTMapper().KindFor(gvr)
+	if err != nil {
+		logger.Error(err, "failed to resolve GVK")
+		return ctrl.Result{}, err
+	}
+
 	rebalancer := &Rebalancer{
 		Client:   r.Client,
 		LabelKey: rs.Spec.ShardLabelKey,
-		GVR:      gvr,
+		GVK:      gvk,
 		Shards:   shardNames(rs.Spec.Shards),
 		Config:   rs.Spec.Rebalance,
 	}
