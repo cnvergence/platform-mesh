@@ -66,7 +66,7 @@ tasks:
     vars:
       KIND_CLUSTER: '{{.KIND_CLUSTER | default "platform-mesh"}}'
       DEPLOYMENT_NAME: '{{.DEPLOYMENT_NAME | default "resource-sharding-operator"}}'
-      DEPLOYMENT_NAMESPACE: '{{.DEPLOYMENT_NAMESPACE | default "aegir-system"}}'
+      DEPLOYMENT_NAMESPACE: '{{.DEPLOYMENT_NAMESPACE | default "platform-mesh-system"}}'
       IMAGE_TAG: '{{.IMAGE_TAG | default "dev"}}'
     cmds:
     - docker build -t ghcr.io/platform-mesh/resource-sharding-operator:{{.IMAGE_TAG}} .
