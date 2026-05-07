@@ -4,15 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+	"golang.org/x/time/rate"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"golang.org/x/time/rate"
-
-	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type RebalanceResult struct {
@@ -21,11 +20,11 @@ type RebalanceResult struct {
 }
 
 type Rebalancer struct {
-	Client              client.Client
-	LabelKey            string
-	GVK                 schema.GroupVersionKind
-	Shards              []string
-	Config              v1alpha1.RebalanceConfig
+	Client               client.Client
+	LabelKey             string
+	GVK                  schema.GroupVersionKind
+	Shards               []string
+	Config               v1alpha1.RebalanceConfig
 	ResourceShardingName string
 }
 
@@ -37,7 +36,7 @@ func (r *Rebalancer) Run(ctx context.Context) (*RebalanceResult, error) {
 		return nil, fmt.Errorf("counting shards: %w", err)
 	}
 
-	orphanCount, err := r.cleanupOrphans(ctx, counts)
+	orphanCount, err := r.cleanupOrphans(ctx)
 	if err != nil {
 		logger.Error(err, "orphan cleanup failed")
 	}
@@ -113,7 +112,7 @@ func (r *Rebalancer) countPerShard(ctx context.Context) (map[string]int, error) 
 	return counts, nil
 }
 
-func (r *Rebalancer) cleanupOrphans(ctx context.Context, validCounts map[string]int) (int, error) {
+func (r *Rebalancer) cleanupOrphans(ctx context.Context) (int, error) {
 	selector, err := labels.Parse(r.LabelKey)
 	if err != nil {
 		return 0, err

@@ -21,6 +21,7 @@ type ShardRef struct {
 
 type RebalanceConfig struct {
 	// +kubebuilder:default="5m"
+	// +kubebuilder:validation:XValidation:rule="self != \"0s\"",message="interval must be greater than zero"
 	Interval metav1.Duration `json:"interval,omitempty"`
 	// +kubebuilder:default=20
 	// +kubebuilder:validation:Minimum=1

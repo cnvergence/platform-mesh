@@ -3,20 +3,20 @@ package controller
 import (
 	"context"
 	"fmt"
-	"time"
+	"sync"
+
+	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/workqueue"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	toolscache "k8s.io/client-go/tools/cache"
-
-	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+	"k8s.io/client-go/util/workqueue"
 )
 
 func StartDynamicController(ctx context.Context, mgr ctrl.Manager, rs *v1alpha1.ResourceSharding, gvr schema.GroupVersionResource) (*RunningController, error) {
@@ -49,9 +49,11 @@ func StartDynamicController(ctx context.Context, mgr ctrl.Manager, rs *v1alpha1.
 		return nil, fmt.Errorf("creating cache: %w", err)
 	}
 
+	// Snapshot immutable fields before spawning goroutines — the caller's *rs may be mutated concurrently.
+	rsName := rs.Name
 	assigner := NewShardAssigner(shardNames(rs.Spec.Shards))
 	ctrlCtx, cancel := context.WithCancel(ctx)
-	logger := ctrl.Log.WithName("shard-assign").WithValues("gvk", gvk.String(), "resourcesharding", rs.Name)
+	logger := ctrl.Log.WithName("shard-assign").WithValues("gvk", gvk.String(), "resourcesharding", rsName)
 
 	// Get the informer BEFORE starting the cache
 	informer, err := informerCache.GetInformer(ctrlCtx, obj)
@@ -94,8 +96,12 @@ func StartDynamicController(ctx context.Context, mgr ctrl.Manager, rs *v1alpha1.
 	}
 	logger.Info("dynamic controller started", "gvr", gvr.String(), "gvk", gvk.String())
 
+	var wg sync.WaitGroup
+
 	// Process the work queue
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
 			item, shutdown := queue.Get()
 			if shutdown {
@@ -120,6 +126,10 @@ func StartDynamicController(ctx context.Context, mgr ctrl.Manager, rs *v1alpha1.
 				}
 
 				shard := assigner.Next()
+				if shard == "" {
+					queue.Forget(req)
+					return
+				}
 				patch := client.MergeFrom(patchObj.DeepCopy())
 				if patchObj.Labels == nil {
 					patchObj.Labels = make(map[string]string)
@@ -132,18 +142,18 @@ func StartDynamicController(ctx context.Context, mgr ctrl.Manager, rs *v1alpha1.
 					return
 				}
 
-				assignmentsTotal.WithLabelValues(rs.Name, shard).Inc()
+				assignmentsTotal.WithLabelValues(rsName, shard).Inc()
 				logger.Info("assigned shard", "resource", req.NamespacedName, "shard", shard)
 				queue.Forget(req)
 			}()
 		}
 	}()
 
-	// Shutdown queue when context is cancelled
+	// Shutdown queue when context is cancelled; wait for worker to drain.
 	go func() {
 		<-ctrlCtx.Done()
-		time.Sleep(100 * time.Millisecond)
 		queue.ShutDown()
+		wg.Wait()
 	}()
 
 	return &RunningController{
