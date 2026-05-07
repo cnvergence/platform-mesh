@@ -20,6 +20,10 @@ tasks:
     internal: true
     cmds:
     - test -s {{.LOCAL_BIN}}/golangci-lint || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+  setup:envtest:
+    internal: true
+    cmds:
+    - test -s {{.LOCAL_BIN}}/setup-envtest || GOBIN=$(pwd)/{{.LOCAL_BIN}} go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
   manifests:
     deps: [ setup:controller-gen ]
@@ -38,8 +42,12 @@ tasks:
     - task: fmt
     - "{{.LOCAL_BIN}}/golangci-lint run --timeout 15m ./..."
   test:
+    deps: [setup:envtest]
+    env:
+      KUBEBUILDER_ASSETS:
+        sh: '{{.LOCAL_BIN}}/setup-envtest use {{.ENVTEST_K8S_VERSION}} --bin-dir $(pwd)/{{.LOCAL_BIN}} -p path'
     cmds:
-    - go test ./... {{.ADDITIONAL_COMMAND_ARGS}}
+    - go test -race ./... {{.ADDITIONAL_COMMAND_ARGS}}
   cover:
     cmds:
     - task: test
@@ -49,12 +57,14 @@ tasks:
     cmds:
     - CGO_ENABLED=0 go build -ldflags '-w -s' -o bin/manager main.go
   docker-build:
+    vars:
+      IMAGE_TAG: '{{.IMAGE_TAG | default "dev"}}'
     cmds:
-    - docker build .
+    - docker build -t ghcr.io/platform-mesh/resource-sharding-operator:{{.IMAGE_TAG}} .
   docker:kind:
     desc: "Build container image and load into Kind cluster"
     vars:
-      KIND_CLUSTER: '{{.KIND_CLUSTER | default "aegir-remote"}}'
+      KIND_CLUSTER: '{{.KIND_CLUSTER | default "platform-mesh"}}'
       DEPLOYMENT_NAME: '{{.DEPLOYMENT_NAME | default "resource-sharding-operator"}}'
       DEPLOYMENT_NAMESPACE: '{{.DEPLOYMENT_NAMESPACE | default "aegir-system"}}'
       IMAGE_TAG: '{{.IMAGE_TAG | default "dev"}}'

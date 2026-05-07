@@ -9,7 +9,7 @@ exclude:
     - ^cmd # skip covering cmd directory
 
 override:
-  - path: ^internal/controller/(.+)_controller.go$
+  - path: ^internal/controller/(.+)_reconciler.go$
     threshold: 60
   - path: ^internal/controller$
     threshold: 70

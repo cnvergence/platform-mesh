@@ -41,8 +41,16 @@ linters:
       - examples$
 formatters:
   enable:
+    - gci
     - gofmt
-    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(k8s.io)
+        - prefix(github.com/kcp-dev)
+      skip-generated: true
   exclusions:
     generated: lax
     paths:

@@ -2,20 +2,23 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
+	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
 	"github.com/stretchr/testify/suite"
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 )
 
 const (
@@ -30,7 +33,8 @@ type ResourceShardingSuite struct {
 	env       *envtest.Environment
 	k8sClient client.Client
 	mgr       manager.Manager
-	scheme    *runtime.Scheme
+	scheme    *k8sruntime.Scheme
+	mgrErr    chan error
 }
 
 func TestResourceShardingSuite(t *testing.T) {
@@ -38,15 +42,20 @@ func TestResourceShardingSuite(t *testing.T) {
 }
 
 func (s *ResourceShardingSuite) SetupSuite() {
-	s.scheme = runtime.NewScheme()
+	s.scheme = k8sruntime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(s.scheme))
 	utilruntime.Must(v1alpha1.AddToScheme(s.scheme))
+
+	assetsDir := os.Getenv("KUBEBUILDER_ASSETS")
+	if assetsDir == "" {
+		assetsDir = filepath.Join("..", "..", "bin", "k8s", fmt.Sprintf("1.29.0-%s-%s", runtime.GOOS, runtime.GOARCH))
+	}
 
 	s.env = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "config", "crd"),
 		},
-		BinaryAssetsDirectory: filepath.Join("..", "..", "bin", "k8s", "1.29.0-darwin-arm64"),
+		BinaryAssetsDirectory: assetsDir,
 	}
 
 	cfg, err := s.env.Start()
@@ -62,17 +71,18 @@ func (s *ResourceShardingSuite) SetupSuite() {
 	})
 	s.Require().NoError(err)
 
-	err = SetupWithManager(s.mgr, nil)
+	err = SetupWithManager(s.mgr)
 	s.Require().NoError(err)
 
-	go func() {
-		err := s.mgr.Start(s.ctx)
-		s.Require().NoError(err)
-	}()
+	s.mgrErr = make(chan error, 1)
+	go func() { s.mgrErr <- s.mgr.Start(s.ctx) }()
 }
 
 func (s *ResourceShardingSuite) TearDownSuite() {
 	s.cancel()
+	if err := <-s.mgrErr; err != nil && err != context.Canceled {
+		s.NoError(err)
+	}
 	err := s.env.Stop()
 	s.Require().NoError(err)
 }
