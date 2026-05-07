@@ -1,0 +1,9 @@
+version = 1
+SPDX-PackageName = "resource-sharding-operator"
+SPDX-PackageDownloadLocation = "https://github.com/platform-mesh/resource-sharding-operator"
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 NeoNephos Foundation and platform-mesh contributors."
+SPDX-License-Identifier = "Apache-2.0"
