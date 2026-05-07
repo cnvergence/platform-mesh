@@ -5,19 +5,19 @@ import (
 	"crypto/tls"
 	"net/http"
 
-	"github.com/kcp-dev/multicluster-provider/apiexport"
 	platformmeshcontext "github.com/platform-mesh/golang-commons/context"
+	"github.com/platform-mesh/resource-sharding-operator/internal/controller"
 	"github.com/spf13/cobra"
-	"k8s.io/client-go/rest"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"github.com/kcp-dev/multicluster-provider/apiexport"
 
-	"github.com/platform-mesh/resource-sharding-operator/internal/controller"
+	"k8s.io/client-go/rest"
 )
 
 var operatorCmd = &cobra.Command{
@@ -79,7 +79,7 @@ func RunController(_ *cobra.Command, _ []string) {
 		if providerErr != nil {
 			log.Fatal().Err(providerErr).Msg("creating APIExport provider")
 		}
-		mcMgr, mcErr := mcmanager.New(restCfg, provider, mcmanager.Options(mgrOpts))
+		mcMgr, mcErr := mcmanager.New(restCfg, provider, mgrOpts)
 		if mcErr != nil {
 			log.Fatal().Err(mcErr).Msg("unable to start multicluster manager")
 		}
@@ -91,7 +91,8 @@ func RunController(_ *cobra.Command, _ []string) {
 		log.Fatal().Err(err).Msg("unable to start manager")
 	}
 
-	if err := controller.SetupWithManager(mgr, log); err != nil {
+	setupOpts := controller.SetupOptions{WebhookEnabled: operatorCfg.WebhookEnabled}
+	if err := controller.SetupWithManager(mgr, setupOpts); err != nil {
 		log.Fatal().Err(err).Msg("unable to setup controllers")
 	}
 

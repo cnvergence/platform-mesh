@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 
-	admissionv1 "k8s.io/api/admission/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	admissionv1 "k8s.io/api/admission/v1"
 )
 
 type ShardAssignHandler struct {
@@ -22,14 +22,9 @@ func (h *ShardAssignHandler) Handle(_ context.Context, req admission.Request) ad
 		return admission.Allowed("")
 	}
 
-	uid := h.findResourceShardingUID(req)
-	if uid == "" {
+	running := h.Registry.FindByGVR(req.Resource.Group, req.Resource.Version, req.Resource.Resource)
+	if running == nil {
 		return admission.Allowed("no matching ResourceSharding")
-	}
-
-	running, exists := h.Registry.Get(uid)
-	if !exists {
-		return admission.Allowed("no running controller")
 	}
 
 	labels := extractLabels(req.Object.Raw)
@@ -38,6 +33,9 @@ func (h *ShardAssignHandler) Handle(_ context.Context, req admission.Request) ad
 	}
 
 	shard := running.Assigner.Next()
+	if shard == "" {
+		return admission.Allowed("no shards configured")
+	}
 	logger.Info("webhook assigning shard", "shard", shard)
 
 	var patch []map[string]interface{}
@@ -69,19 +67,6 @@ func (h *ShardAssignHandler) Handle(_ context.Context, req admission.Request) ad
 	resp.PatchType = &patchType
 	resp.Patch = patchBytes
 	return resp
-}
-
-func (h *ShardAssignHandler) findResourceShardingUID(req admission.Request) types.UID {
-	h.Registry.mu.Lock()
-	defer h.Registry.mu.Unlock()
-
-	for uid, rc := range h.Registry.running {
-		if rc.GVR.Group == req.Resource.Group &&
-			rc.GVR.Resource == req.Resource.Resource {
-			return uid
-		}
-	}
-	return ""
 }
 
 func extractLabels(raw []byte) map[string]string {

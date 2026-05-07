@@ -58,3 +58,16 @@ func (r *DynamicControllerRegistry) HasGVR(gvr schema.GroupVersionResource, excl
 	}
 	return false
 }
+
+// FindByGVR returns the first RunningController whose GVR matches all three fields
+// (Group, Version, Resource). Returns nil if no match is found.
+func (r *DynamicControllerRegistry) FindByGVR(group, version, resource string) *RunningController {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, rc := range r.running {
+		if rc.GVR.Group == group && rc.GVR.Version == version && rc.GVR.Resource == resource {
+			return rc
+		}
+	}
+	return nil
+}

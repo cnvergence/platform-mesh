@@ -54,6 +54,12 @@ podAnnotations: {}
 # -- Additional pod labels
 podLabels: {}
 
+webhook:
+  # -- Enable the mutating admission webhook
+  enabled: true
+  # -- Service name for the webhook (defaults to fullname + "-webhook")
+  serviceName: ""
+
 securityContext:
   runAsNonRoot: true
   seccompProfile:

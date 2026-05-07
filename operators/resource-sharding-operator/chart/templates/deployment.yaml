@@ -44,6 +44,14 @@ spec:
             - --metrics-bind-address={{ .Values.metrics.bindAddress }}
             - --health-probe-bind-address={{ .Values.health.bindAddress }}
             - --kcp-api-export-endpoint-slice-name={{ .Values.kcp.apiExportEndpointSliceName }}
+            - --webhook-enabled={{ .Values.webhook.enabled }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: WEBHOOK_SERVICE_NAME
+              value: {{ include "resource-sharding-operator.webhookServiceName" . }}
           ports:
             - name: metrics
               containerPort: 9090
@@ -51,6 +59,11 @@ spec:
             - name: health
               containerPort: 8090
               protocol: TCP
+            {{- if .Values.webhook.enabled }}
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

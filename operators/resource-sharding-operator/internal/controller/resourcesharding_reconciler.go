@@ -3,17 +3,19 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
+	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 )
 
 const (
@@ -23,6 +25,7 @@ const (
 	ConditionTargetNotFound     = "TargetNotFound"
 	ConditionPermissionsMissing = "PermissionsMissing"
 	ConditionConflict           = "Conflict"
+	ConditionWebhookReady       = "WebhookReady"
 )
 
 type ResourceShardingReconciler struct {
@@ -74,7 +77,13 @@ func (r *ResourceShardingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			Message:            "Target GVR does not exist in the cluster",
 			ObservedGeneration: rs.Generation,
 		})
-		_ = r.Status().Update(ctx, &rs)
+		if updateErr := r.Status().Update(ctx, &rs); updateErr != nil {
+			if apierrors.IsConflict(updateErr) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			logger.Error(updateErr, "failed to update status after target validation failure")
+			return ctrl.Result{RequeueAfter: rs.Spec.Rebalance.Interval.Duration}, nil
+		}
 		return ctrl.Result{RequeueAfter: rs.Spec.Rebalance.Interval.Duration}, nil
 	}
 	meta.RemoveStatusCondition(&rs.Status.Conditions, ConditionTargetNotFound)
@@ -94,8 +103,14 @@ func (r *ResourceShardingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			Message:            "Another ResourceSharding targets the same GVR",
 			ObservedGeneration: rs.Generation,
 		})
-		_ = r.Status().Update(ctx, &rs)
-		return ctrl.Result{}, nil
+		if updateErr := r.Status().Update(ctx, &rs); updateErr != nil {
+			if apierrors.IsConflict(updateErr) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			logger.Error(updateErr, "failed to update status after conflict detection")
+			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+		}
+		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 	}
 	meta.RemoveStatusCondition(&rs.Status.Conditions, ConditionConflict)
 
@@ -114,7 +129,13 @@ func (r *ResourceShardingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			Message:            "Operator lacks required permissions on target GVR",
 			ObservedGeneration: rs.Generation,
 		})
-		_ = r.Status().Update(ctx, &rs)
+		if updateErr := r.Status().Update(ctx, &rs); updateErr != nil {
+			if apierrors.IsConflict(updateErr) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			logger.Error(updateErr, "failed to update status after permissions check failure")
+			return ctrl.Result{RequeueAfter: rs.Spec.Rebalance.Interval.Duration}, nil
+		}
 		return ctrl.Result{RequeueAfter: rs.Spec.Rebalance.Interval.Duration}, nil
 	}
 	meta.RemoveStatusCondition(&rs.Status.Conditions, ConditionPermissionsMissing)
@@ -126,7 +147,30 @@ func (r *ResourceShardingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	if err := EnsureWebhookConfiguration(ctx, r.Client, &rs, gvr, r.WebhookNamespace, r.WebhookServiceName); err != nil {
 		logger.Error(err, "failed to ensure webhook configuration")
+		meta.SetStatusCondition(&rs.Status.Conditions, metav1.Condition{
+			Type:               ConditionWebhookReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             "WebhookConfigurationFailed",
+			Message:            fmt.Sprintf("Failed to ensure MutatingWebhookConfiguration: %v", err),
+			ObservedGeneration: rs.Generation,
+		})
+		meta.SetStatusCondition(&rs.Status.Conditions, metav1.Condition{
+			Type:               ConditionReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             "WebhookNotReady",
+			Message:            "Webhook configuration could not be reconciled",
+			ObservedGeneration: rs.Generation,
+		})
+		if updateErr := r.Status().Update(ctx, &rs); updateErr != nil {
+			if apierrors.IsConflict(updateErr) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			logger.Error(updateErr, "failed to update status after webhook configuration failure")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
+	meta.RemoveStatusCondition(&rs.Status.Conditions, ConditionWebhookReady)
 
 	// Resolve GVR → GVK for the rebalancer
 	gvk, err := r.Manager.GetRESTMapper().KindFor(gvr)
@@ -212,7 +256,8 @@ func (r *ResourceShardingReconciler) validateUniqueness(ctx context.Context, rs 
 }
 
 func (r *ResourceShardingReconciler) ensureDynamicController(ctx context.Context, rs *v1alpha1.ResourceSharding, gvr schema.GroupVersionResource) error {
-	if _, exists := r.Registry.Get(rs.UID); exists {
+	if existing, exists := r.Registry.Get(rs.UID); exists {
+		existing.Assigner.UpdateShards(shardNames(rs.Spec.Shards))
 		return nil
 	}
 
@@ -232,6 +277,8 @@ func shardNames(refs []v1alpha1.ShardRef) []string {
 	}
 	return names
 }
+
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ResourceShardingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).

@@ -3,17 +3,17 @@ package controller
 import (
 	"os"
 
-	"github.com/platform-mesh/golang-commons/logger"
-	"k8s.io/client-go/discovery"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"k8s.io/client-go/discovery"
 )
 
 type SetupOptions struct {
 	WebhookEnabled bool
 }
 
-func SetupWithManager(mgr ctrl.Manager, log *logger.Logger, opts ...SetupOptions) error {
+func SetupWithManager(mgr ctrl.Manager, opts ...SetupOptions) error {
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
 	if err != nil {
 		return err
@@ -51,6 +51,5 @@ func SetupWithManager(mgr ctrl.Manager, log *logger.Logger, opts ...SetupOptions
 		})
 	}
 
-	_ = log
 	return nil
 }

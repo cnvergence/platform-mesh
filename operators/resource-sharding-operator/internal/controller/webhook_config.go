@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
 )
 
 func EnsureWebhookConfiguration(ctx context.Context, c client.Client, rs *v1alpha1.ResourceSharding, gvr schema.GroupVersionResource, namespace, serviceName string) error {
@@ -19,7 +19,7 @@ func EnsureWebhookConfiguration(ctx context.Context, c client.Client, rs *v1alph
 		return DeleteWebhookConfiguration(ctx, c, rs)
 	}
 
-	path := fmt.Sprintf("/mutate-shard-assign-%s", rs.Name)
+	path := "/mutate-shard-assign"
 	failurePolicy := admissionregistrationv1.Ignore
 	sideEffects := admissionregistrationv1.SideEffectClassNone
 
@@ -41,9 +41,9 @@ func EnsureWebhookConfiguration(ctx context.Context, c client.Client, rs *v1alph
 		},
 		Webhooks: []admissionregistrationv1.MutatingWebhook{
 			{
-				Name:          fmt.Sprintf("%s.shard-assign.sharding.platform-mesh.io", rs.Name),
-				FailurePolicy: &failurePolicy,
-				SideEffects:   &sideEffects,
+				Name:                    fmt.Sprintf("%s.shard-assign.sharding.platform-mesh.io", rs.Name),
+				FailurePolicy:           &failurePolicy,
+				SideEffects:             &sideEffects,
 				AdmissionReviewVersions: []string{"v1"},
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
 					Service: &admissionregistrationv1.ServiceReference{

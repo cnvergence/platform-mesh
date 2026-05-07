@@ -1,17 +1,18 @@
 package cmd
 
 import (
-	kcpapisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
 	platformmeshcontext "github.com/platform-mesh/golang-commons/config"
 	"github.com/platform-mesh/golang-commons/logger"
+	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
+	"github.com/platform-mesh/resource-sharding-operator/internal/config"
 	"github.com/spf13/cobra"
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	kcpapisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	ctrl "sigs.k8s.io/controller-runtime"
-
-	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
-	"github.com/platform-mesh/resource-sharding-operator/internal/config"
 )
 
 var (

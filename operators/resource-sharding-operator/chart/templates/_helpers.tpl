@@ -39,3 +39,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $tag := default .Chart.AppVersion .Values.image.tag }}
 {{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}
+
+{{- define "resource-sharding-operator.webhookServiceName" -}}
+{{- if .Values.webhook.serviceName }}
+{{- .Values.webhook.serviceName }}
+{{- else }}
+{{- printf "%s-webhook" (include "resource-sharding-operator.fullname" .) }}
+{{- end }}
+{{- end }}
