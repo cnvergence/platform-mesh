@@ -156,6 +156,111 @@ func TestRebalancer_CleanupOrphans_StripsOrphanLabel(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// assignUnlabeled
+// ---------------------------------------------------------------------------
+
+func TestRebalancer_AssignUnlabeled_AssignsToLeastLoaded(t *testing.T) {
+	const labelKey = "shard.io/shard"
+	scheme := newRebalancerScheme(t)
+
+	objs := []client.Object{
+		buildConfigMap("labeled-a-1", "default", labelKey, "shard-a"),
+		buildConfigMap("labeled-a-2", "default", labelKey, "shard-a"),
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "no-label", Namespace: "default"}},
+	}
+
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+
+	r := &Rebalancer{
+		Client:               fc,
+		LabelKey:             labelKey,
+		GVK:                  configMapListGVK,
+		Shards:               []string{"shard-a", "shard-b"},
+		Config:               v1alpha1.RebalanceConfig{RateLimit: 100},
+		ResourceShardingName: "test-rs",
+	}
+
+	counts := map[string]int{"shard-a": 2, "shard-b": 0}
+	n, err := r.assignUnlabeled(context.Background(), counts)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "the single unlabeled object should be assigned")
+	assert.Equal(t, 1, counts["shard-b"], "least-loaded shard-b should receive the assignment")
+	assert.Equal(t, 2, counts["shard-a"], "shard-a count should be unchanged")
+
+	var got corev1.ConfigMap
+	require.NoError(t, fc.Get(context.Background(), client.ObjectKey{Name: "no-label", Namespace: "default"}, &got))
+	assert.Equal(t, "shard-b", got.Labels[labelKey])
+}
+
+func TestRebalancer_AssignUnlabeled_NoUnlabeledIsNoOp(t *testing.T) {
+	const labelKey = "shard.io/shard"
+	scheme := newRebalancerScheme(t)
+
+	objs := []client.Object{
+		buildConfigMap("labeled-a-1", "default", labelKey, "shard-a"),
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+
+	r := &Rebalancer{
+		Client:               fc,
+		LabelKey:             labelKey,
+		GVK:                  configMapListGVK,
+		Shards:               []string{"shard-a", "shard-b"},
+		Config:               v1alpha1.RebalanceConfig{RateLimit: 100},
+		ResourceShardingName: "test-rs",
+	}
+
+	counts := map[string]int{"shard-a": 1, "shard-b": 0}
+	n, err := r.assignUnlabeled(context.Background(), counts)
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+	assert.Equal(t, 0, counts["shard-b"], "no unlabeled objects should mean no assignment")
+}
+
+func TestRebalancer_AssignUnlabeled_NoShardsIsNoOp(t *testing.T) {
+	const labelKey = "shard.io/shard"
+	scheme := newRebalancerScheme(t)
+
+	objs := []client.Object{
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "no-label", Namespace: "default"}},
+	}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+
+	r := &Rebalancer{
+		Client:               fc,
+		LabelKey:             labelKey,
+		GVK:                  configMapListGVK,
+		Shards:               nil,
+		Config:               v1alpha1.RebalanceConfig{RateLimit: 100},
+		ResourceShardingName: "test-rs",
+	}
+
+	n, err := r.assignUnlabeled(context.Background(), map[string]int{})
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+}
+
+func TestLeastLoaded(t *testing.T) {
+	tests := []struct {
+		name   string
+		shards []string
+		counts map[string]int
+		want   string
+	}{
+		{name: "empty shards", shards: nil, counts: map[string]int{}, want: ""},
+		{name: "single shard", shards: []string{"a"}, counts: map[string]int{"a": 5}, want: "a"},
+		{name: "first least loaded", shards: []string{"a", "b"}, counts: map[string]int{"a": 1, "b": 2}, want: "a"},
+		{name: "second least loaded", shards: []string{"a", "b"}, counts: map[string]int{"a": 2, "b": 1}, want: "b"},
+		{name: "ties favor first", shards: []string{"a", "b"}, counts: map[string]int{"a": 1, "b": 1}, want: "a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, leastLoaded(tt.shards, tt.counts))
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // rebalance (move math)
 // ---------------------------------------------------------------------------
 

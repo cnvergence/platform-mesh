@@ -31,14 +31,19 @@ type Rebalancer struct {
 func (r *Rebalancer) Run(ctx context.Context) (*RebalanceResult, error) {
 	logger := log.FromContext(ctx)
 
+	orphanCount, err := r.cleanupOrphans(ctx)
+	if err != nil {
+		logger.Error(err, "orphan cleanup failed")
+	}
+
 	counts, err := r.countPerShard(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("counting shards: %w", err)
 	}
 
-	orphanCount, err := r.cleanupOrphans(ctx)
+	assigned, err := r.assignUnlabeled(ctx, counts)
 	if err != nil {
-		logger.Error(err, "orphan cleanup failed")
+		logger.Error(err, "unlabeled assignment failed")
 	}
 
 	moved, err := r.rebalance(ctx, counts)
@@ -72,7 +77,7 @@ func (r *Rebalancer) Run(ctx context.Context) (*RebalanceResult, error) {
 		shardImbalanceRatio.WithLabelValues(r.ResourceShardingName).Set(maxDeviation)
 	}
 
-	totalMoved := moved + orphanCount
+	totalMoved := moved + orphanCount + assigned
 	if totalMoved > 0 {
 		rebalanceMovesTotal.WithLabelValues(r.ResourceShardingName).Add(float64(totalMoved))
 	}
@@ -156,6 +161,75 @@ func (r *Rebalancer) cleanupOrphans(ctx context.Context) (int, error) {
 	}
 
 	return orphanCount, nil
+}
+
+// assignUnlabeled finds objects matching the target GVK that lack the shard
+// label and assigns each to the currently least-loaded shard. This is the
+// deterministic backstop for the dynamic controller's watch-based assignment:
+// any object the watch missed (or that loses its label later) is picked up on
+// the next reconcile cycle.
+func (r *Rebalancer) assignUnlabeled(ctx context.Context, counts map[string]int) (int, error) {
+	if len(r.Shards) == 0 {
+		return 0, nil
+	}
+
+	selector, err := labels.Parse("!" + r.LabelKey)
+	if err != nil {
+		return 0, err
+	}
+
+	list := &metav1.PartialObjectMetadataList{}
+	list.SetGroupVersionKind(r.GVK)
+
+	if err := r.Client.List(ctx, list,
+		client.MatchingLabelsSelector{Selector: selector},
+		client.Limit(100),
+	); err != nil {
+		return 0, err
+	}
+
+	limiter := rate.NewLimiter(rate.Limit(r.rateLimit()), 1)
+	assigned := 0
+
+	for i := range list.Items {
+		item := &list.Items[i]
+
+		shard := leastLoaded(r.Shards, counts)
+		if shard == "" {
+			break
+		}
+
+		if err := limiter.Wait(ctx); err != nil {
+			return assigned, err
+		}
+
+		patch := client.MergeFrom(item.DeepCopy())
+		if item.Labels == nil {
+			item.Labels = make(map[string]string)
+		}
+		item.Labels[r.LabelKey] = shard
+		if err := r.Client.Patch(ctx, item, patch); err != nil {
+			return assigned, fmt.Errorf("assigning shard to unlabeled resource: %w", err)
+		}
+		counts[shard]++
+		assignmentsTotal.WithLabelValues(r.ResourceShardingName, shard).Inc()
+		assigned++
+	}
+
+	return assigned, nil
+}
+
+func leastLoaded(shards []string, counts map[string]int) string {
+	if len(shards) == 0 {
+		return ""
+	}
+	best := shards[0]
+	for _, s := range shards[1:] {
+		if counts[s] < counts[best] {
+			best = s
+		}
+	}
+	return best
 }
 
 func (r *Rebalancer) rebalance(ctx context.Context, counts map[string]int) (int, error) {
