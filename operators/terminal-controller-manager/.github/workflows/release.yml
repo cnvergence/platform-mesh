@@ -1,13 +1,9 @@
-name: ci
+name: release
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    types:
-      - opened
-      - synchronize
 
 permissions:
   contents: write
@@ -18,8 +14,8 @@ permissions:
   attestations: write
 
 concurrency:
-  group: ${{ github.ref }}
-  cancel-in-progress: true
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   lint:
@@ -34,71 +30,11 @@ jobs:
       useTask: true
       useLocalCoverageConfig: true
 
-  docker-build:
-    if: github.event_name == 'pull_request'
-    uses: platform-mesh/.github/.github/workflows/job-docker-build-push.yml@main
-    with:
-      imageTagName: ghcr.io/platform-mesh/terminal-controller-manager
-    secrets: inherit
-
-  terminal-image-build:
-    name: Build Terminal Image
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build
-        uses: docker/build-push-action@v6
-        with:
-          context: images/terminal
-          platforms: linux/amd64,linux/arm64
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  quality-gate:
-    if: always()
-    permissions: {}
-    needs: [lint, test, docker-build, terminal-image-build]
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
-    steps:
-      - name: Check results
-        run: |
-          if [[ "${{ needs.lint.result }}" != "success" ]]; then
-            echo "lint failed"
-            exit 1
-          fi
-          if [[ "${{ needs.test.result }}" != "success" ]]; then
-            echo "test failed"
-            exit 1
-          fi
-          # docker-build and terminal-image-build are skipped on main pushes — allow skipped
-          if [[ "${{ needs.docker-build.result }}" != "success" && "${{ needs.docker-build.result }}" != "skipped" ]]; then
-            echo "docker-build failed"
-            exit 1
-          fi
-          if [[ "${{ needs.terminal-image-build.result }}" != "success" && "${{ needs.terminal-image-build.result }}" != "skipped" ]]; then
-            echo "terminal-image-build failed"
-            exit 1
-          fi
-
   create-version:
-    if: github.ref == 'refs/heads/main'
     uses: platform-mesh/.github/.github/workflows/job-create-version.yml@main
     secrets: inherit
 
   docker-build-push:
-    if: github.ref == 'refs/heads/main'
     needs: [create-version, lint, test]
     uses: platform-mesh/.github/.github/workflows/job-docker-build-push.yml@main
     with:
@@ -109,7 +45,6 @@ jobs:
 
   terminal-image-build-push:
     name: Build and Push Terminal Image
-    if: github.ref == 'refs/heads/main'
     needs: [create-version]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -155,7 +90,6 @@ jobs:
           cache-to: type=gha,mode=max
 
   update-version:
-    if: github.ref == 'refs/heads/main'
     needs: [create-version, docker-build-push]
     uses: platform-mesh/.github/.github/workflows/job-chart-version-update.yml@main
     secrets: inherit
@@ -165,14 +99,12 @@ jobs:
       targetRepository: platform-mesh/helm-charts
 
   sbom:
-    if: github.ref == 'refs/heads/main'
     needs: [create-version, docker-build-push]
     uses: platform-mesh/.github/.github/workflows/job-sbom.yml@main
     with:
       imageReference: ghcr.io/platform-mesh/terminal-controller-manager:${{ needs.create-version.outputs.version }}
 
   image-ocm:
-    if: github.ref == 'refs/heads/main'
     needs: [create-version, docker-build-push, sbom]
     uses: platform-mesh/.github/.github/workflows/job-image-ocm.yml@main
     secrets: inherit
