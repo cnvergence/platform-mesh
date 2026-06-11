@@ -30,6 +30,7 @@ import (
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 
 	"github.com/platform-mesh/backup-operator/pkg/controller"
+	"github.com/platform-mesh/backup-operator/pkg/topology/projector"
 )
 
 var operatorCmd = &cobra.Command{
@@ -68,6 +69,10 @@ func RunController(_ *cobra.Command, _ []string) { // coverage-ignore
 	})
 	if err != nil {
 		log.Fatal().Err(err).Msg("unable to start manager")
+	}
+
+	if err := projector.New(mgr.GetLocalManager().GetClient(), operatorCfg.Namespace).EnsureConfigMap(ctx); err != nil {
+		log.Fatal().Err(err).Msg("unable to ensure topology schema ConfigMap")
 	}
 
 	if err := controller.NewPlatformBackupReconciler(mgr).SetupWithManager(mgr); err != nil {
