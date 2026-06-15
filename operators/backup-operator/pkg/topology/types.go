@@ -9,7 +9,7 @@ type Manifest struct {
 	SchemaVersion   string          `json:"schemaVersion"`
 	CapturedAt      time.Time       `json:"capturedAt"`
 	HostCluster     HostCluster     `json:"hostCluster"`
-	KCP             KcpTopology     `json:"kcp"`
+	Kcp             KcpTopology     `json:"kcp"`
 	CNPG            CNPGTopology    `json:"cnpg"`
 	OpenFGA         OpenFGATopology `json:"openfga"`
 	OperatorVersion string          `json:"operatorVersion"`
