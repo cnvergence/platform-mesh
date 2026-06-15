@@ -150,6 +150,12 @@ tasks:
     deps: [mockery, setup:envtest, setup:kcp, setup:controller-gen]
     cmds:
       - task: envtest
+  fuzz:
+    desc: "Run fuzz tests with a configurable duration (default 30s per target)"
+    vars:
+      FUZZTIME: '{{.FUZZTIME | default "30s"}}'
+    cmds:
+      - go test ./pkg/validation/ -run=^$ -fuzz=FuzzValidate -fuzztime={{.FUZZTIME}} -count=1
   cover:
     deps: [setup:envtest, test, setup:go-test-coverage]
     cmds:
