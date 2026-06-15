@@ -31,6 +31,13 @@ tasks:
   build:
     cmds:
       - go build ./...
+  fuzz:
+    desc: "Run fuzz tests with a configurable duration (default 30s per target)"
+    vars:
+      FUZZTIME: '{{.FUZZTIME | default "30s"}}'
+    cmds:
+      - go test ./jwt/ -run=^$ -fuzz=FuzzNew -fuzztime={{.FUZZTIME}} -count=1
+      - go test ./jwt/ -run=^$ -fuzz=FuzzGetURIValue -fuzztime={{.FUZZTIME}} -count=1
   test:
     env:
       GO111MODULE: on
