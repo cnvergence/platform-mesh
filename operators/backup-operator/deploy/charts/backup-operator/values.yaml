@@ -1,0 +1,6 @@
+image:
+  name: ghcr.io/platform-mesh/backup-operator
+  tag: latest
+
+kcp:
+  apiExportEndpointSliceName: backup.platform-mesh.io

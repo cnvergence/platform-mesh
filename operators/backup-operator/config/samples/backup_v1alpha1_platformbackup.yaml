@@ -1,0 +1,19 @@
+apiVersion: backup.platform-mesh.io/v1alpha1
+kind: PlatformBackup
+metadata:
+  name: platformbackup-sample
+spec:
+  storage:
+    s3:
+      endpoint: https://s3.example.com
+      bucket: platform-mesh-backups
+      region: us-east-1
+      credentialsRef:
+        name: s3-credentials
+  components:
+    etcd:
+      enabled: true
+    cnpg:
+      enabled: true
+    velero:
+      enabled: true

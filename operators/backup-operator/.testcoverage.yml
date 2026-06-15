@@ -1,0 +1,9 @@
+threshold:
+  file: 0
+  package: 0
+  total: 0
+exclude:
+  paths:
+    - api/v1alpha1   # generated files and CRD type definitions
+    - main\.go$      # skip main.go
+    - ^cmd           # skip cmd directory

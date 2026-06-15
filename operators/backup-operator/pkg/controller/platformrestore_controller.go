@@ -1,0 +1,57 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
+
+	"github.com/platform-mesh/subroutines"
+	"github.com/platform-mesh/subroutines/conditions"
+	"github.com/platform-mesh/subroutines/lifecycle"
+
+	"github.com/platform-mesh/backup-operator/api/v1alpha1"
+)
+
+// PlatformRestoreReconciler reconciles PlatformRestore resources.
+type PlatformRestoreReconciler struct {
+	lifecycle *lifecycle.Lifecycle
+}
+
+func NewPlatformRestoreReconciler(mgr mcmanager.Manager) *PlatformRestoreReconciler {
+	lc := lifecycle.New(mgr, "PlatformRestoreReconciler", func() client.Object {
+		return &v1alpha1.PlatformRestore{}
+	}, []subroutines.Subroutine{}...).WithConditions(conditions.NewManager())
+
+	return &PlatformRestoreReconciler{lifecycle: lc}
+}
+
+func (r *PlatformRestoreReconciler) SetupWithManager(mgr mcmanager.Manager) error {
+	return mcbuilder.ControllerManagedBy(mgr).
+		Named("PlatformRestoreReconciler").
+		For(&v1alpha1.PlatformRestore{}).
+		Complete(r)
+}
+
+func (r *PlatformRestoreReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
+	return r.lifecycle.Reconcile(ctx, req)
+}

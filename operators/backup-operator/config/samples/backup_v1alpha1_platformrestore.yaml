@@ -1,0 +1,17 @@
+apiVersion: backup.platform-mesh.io/v1alpha1
+kind: PlatformRestore
+metadata:
+  name: platformrestore-sample
+spec:
+  source:
+    storage:
+      s3:
+        endpoint: https://s3.example.com
+        bucket: platform-mesh-backups
+        region: us-east-1
+        credentialsRef:
+          name: s3-credentials
+    backupID: "backup-20260101-120000"
+  topologyValidation: Strict
+  repair:
+    delete: false
