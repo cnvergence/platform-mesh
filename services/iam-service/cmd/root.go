@@ -1,0 +1,57 @@
+package cmd
+
+import (
+	apisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
+	tenancyv1alpha1 "github.com/kcp-dev/sdk/apis/tenancy/v1alpha1"
+	accountsv1alpha1 "github.com/platform-mesh/account-operator/api/v1alpha1"
+	platformmeshcontext "github.com/platform-mesh/golang-commons/config"
+	"github.com/platform-mesh/golang-commons/logger"
+	securityv1alpha1 "github.com/platform-mesh/security-operator/api/v1alpha1"
+	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+
+	"github.com/platform-mesh/iam-service/pkg/config"
+)
+
+var (
+	scheme     = runtime.NewScheme()
+	serviceCfg = config.NewServiceConfig()
+	defaultCfg *platformmeshcontext.CommonServiceConfig
+	log        *logger.Logger
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "iam-service",
+	Short: "the platform mesh iam-service",
+}
+
+func init() {
+	utilruntime.Must(accountsv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(tenancyv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(apisv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(securityv1alpha1.AddToScheme(scheme))
+	rootCmd.AddCommand(serverCmd)
+
+	defaultCfg = platformmeshcontext.NewDefaultConfig()
+	defaultCfg.AddFlags(rootCmd.PersistentFlags())
+	serviceCfg.AddFlags(serverCmd.Flags())
+
+	cobra.OnInitialize(initLog)
+}
+
+func initLog() {
+	lCfg := logger.DefaultConfig()
+	lCfg.Level = defaultCfg.Log.Level
+	lCfg.NoJSON = defaultCfg.Log.NoJson
+
+	var err error
+	log, err = logger.New(lCfg)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func Execute() {
+	cobra.CheckErr(rootCmd.Execute())
+}

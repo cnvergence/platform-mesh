@@ -1,0 +1,143 @@
+# TODO
+# - invites
+# - remove role from myself?
+# - authorization directives
+
+## enums
+enum UserSortField {
+    userId
+    email
+    firstName
+    lastName
+}
+
+enum SortDirection {
+    asc
+    desc
+}
+
+## Types
+""" Holds additional information about the retrieved data """
+type PageInfo {
+    count: Int!
+    totalCount: Int!
+    hasNextPage: Boolean!
+    hasPreviousPage: Boolean!
+}
+
+
+""" Represents a user """
+type User {
+    userId: String!
+    email: String!
+    firstName: String
+    lastName: String
+#    invitationOutstanding: Boolean!
+}
+
+""" Represents a role that can be granted to a user or group of users """
+type Role {
+    """ Is the unique identifier of the role """
+    id: String!
+    """ Is a human readable name of the role """
+    displayName: String!
+    """ Is a description of what the role provides """
+    description: String!
+}
+
+""" Contains all roles that are granted to a user """
+type UserRoles {
+    user: User!
+    roles: [Role!]!
+}
+
+""" Is a list of the users and their roles """
+type UserConnection {
+    users: [UserRoles!]!
+    """ number of granted users in the list """
+    pageInfo: PageInfo!
+    """ number of users in the result set that have the owner role """
+    ownersCount: Int!
+}
+
+""" Result of role assignment operation """
+type RoleAssignmentResult {
+    success: Boolean!
+    errors: [String!]
+    assignedCount: Int!
+}
+
+""" Result of role removal operation """
+type RoleRemovalResult {
+    success: Boolean!
+    error: String
+    wasAssigned: Boolean!
+}
+
+## Inputs
+input Resource {
+    name: String!
+    namespace: String
+}
+
+""" Common resource context used across queries and mutations """
+input ResourceContext {
+    group: String!
+    kind: String!
+    resource: Resource!
+    accountPath: String!
+}
+
+""" Holds information about a specific user and a list of roles that should be assigned to the user """
+input UserRoleChange {
+    userId: String!
+    roles: [String!]!
+}
+
+""" Input for inviting a new user and assigning roles """
+input InviteInput {
+    email: String!
+    roles: [String!]!
+}
+
+""" Input for removing a role from a user """
+input RemoveRoleInput {
+    userId: String!
+    role: String!
+}
+
+input SortByInput {
+    field: UserSortField!
+    direction: SortDirection!
+}
+
+input PageInput {
+    limit: Int = 10,
+    page: Int = 1
+}
+
+# Query and Mutations
+type Query {
+    """ roles returns the list of assignable roles for a particular groupResource/resource e.g. What roles can be assigned for a specific core_platform-mesh_io_account"""
+    roles(context: ResourceContext!): [Role]! @authorized(permission: "get_iam_roles")
+    """ returns all users that have roles assigned for a particular groupResource/resource."""
+    users(context: ResourceContext!, roleFilters: [String!], sortBy: SortByInput, page: PageInput): UserConnection! @authorized(permission: "get_iam_users")
+    """ returns all users known to the system, regardless of whether they have roles assigned."""
+    knownUsers(sortBy: SortByInput, page: PageInput): UserConnection!
+    """ returns a specific user by userId"""
+    user(userId: String!): User
+    """ returns my user information"""
+    me: User
+}
+
+
+type Mutation {
+    assignRolesToUsers(context: ResourceContext!, changes: [UserRoleChange!], invites: [InviteInput!]): RoleAssignmentResult! @authorized(permission: "manage_iam_roles")
+    removeRole(context: ResourceContext!, input: RemoveRoleInput!): RoleRemovalResult! @authorized(permission: "manage_iam_roles")
+}
+schema{
+    query: Query
+    mutation: Mutation
+}
+
+directive @authorized(permission: String!) on FIELD_DEFINITION

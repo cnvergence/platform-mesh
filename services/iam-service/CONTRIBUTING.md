@@ -1,0 +1,150 @@
+# Contributing to Platform Mesh IAM Service
+
+We want to make contributing to this project as easy and transparent as possible.
+
+## Project Overview
+
+This is the Platform Mesh IAM (Identity and Access Management) service, a Go-based microservice that provides a GraphQL API for user management and authorization. The service has been refactored to use OpenFGA as the primary backend for authorization data and KCP for multi-cluster resource management, eliminating the need for a traditional database. It integrates with Keycloak for identity management.
+
+## Development Setup
+
+### Prerequisites
+1. Go 1.26.0+ (check [go.mod](go.mod) for exact version)
+2. Platform Mesh installation (OpenFGA and KCP)
+3. Task runner (optional but recommended)
+
+### Environment Setup
+1. Copy `.env.sample` to `.env` and configure your IDE to load it
+2. Configure required environment variables:
+   - `KUBECONFIG`: Path to your kubeconfig file
+   - `KEYCLOAK_CLIENT_SECRET`: Your Keycloak client secret (mandatory, read from environment only — never passed as a CLI arg)
+3. Other settings (Keycloak base URL, client ID, OpenFGA address, etc.) are configured via CLI flags — see `go run ./main.go serve --help`
+
+## Development Commands
+
+### Building and Running
+```bash
+# Run locally (configure env vars via your IDE)
+task run
+# OR
+go run ./main.go serve
+
+# Build the project
+task build
+# OR
+go build ./...
+```
+
+### Testing
+```bash
+# Run all tests with coverage
+task test
+
+# Run unit tests only
+task unittest
+# OR
+go test ./...
+
+# Run specific package tests (e.g., middleware/kcp)
+go test -v ./pkg/middleware/kcp
+
+# Check test coverage
+task cover
+
+# Generate detailed coverage reports
+go test ./pkg/middleware/kcp -coverprofile=coverage.out
+go tool cover -html=coverage.out -o coverage.html
+```
+
+### Code Quality and Generation
+```bash
+# Format code
+task fmt
+
+# Run linting
+task lint
+
+# Generate code (GraphQL, mocks, etc.)
+task generate
+
+# Generate mocks only
+task mockery
+
+# Full validation pipeline (format, lint, build, coverage)
+task validate
+```
+
+## Architecture
+
+### High-Level Structure
+- **Entry Point**: `main.go` → `cmd/` → `cmd/server.go`
+- **Transport Layer**: GraphQL API via gqlgen
+- **Service Layer**: Business logic in `pkg/service/` and `pkg/resolver/`
+- **Integration Layer**: OpenFGA (gRPC client), Keycloak for identity management, KCP for multi-cluster management
+- **Data Backend**: OpenFGA for authorization data, KCP for resource management (no traditional database), IDP for User Data
+
+## Development Patterns
+
+### Code Generation
+- GraphQL code generation via gqlgen (run `task generate`)
+- Mock generation via mockery (configured in `.mockery.yaml`)
+- Generated files should not be manually edited
+
+### Authorization Flow
+1. JWT token validation through middleware
+2. Tenant context extraction
+3. OpenFGA authorization checks
+4. Role-based permission evaluation
+
+### Multi-tenancy
+- Tenant information extracted from JWT tokens
+- Tenant-scoped authorization through OpenFGA
+- KCP-based multi-cluster resource management
+
+## Common Development Tasks
+
+### Adding New GraphQL Operations
+1. Update `graph/schema.graphql`
+2. Run `task generate` to update generated code
+3. Implement resolver in `pkg/resolver/schema.resolvers.go`
+4. Add service layer logic if needed
+5. Write tests and update mocks
+
+## Pull Requests
+
+You are welcome to contribute with your pull requests. These steps explain the contribution process:
+
+1. Fork the repository and create your branch from `main`.
+2. [Add tests](#testing) for your code.
+3. If you've changed APIs, update the documentation.
+4. Make sure the tests pass. Our GitHub Actions pipeline runs unit and e2e tests for your PR.
+5. Sign the Developer Certificate of Origin (DCO).
+
+## Testing Strategy
+
+- Unit tests for all packages (`*_test.go`)
+- High coverage requirements (see [config](.testcoverage.yml))
+- Mock interfaces for external dependencies
+- Integration testing with OpenFGA and Keycloak
+
+> **NOTE:** You should always add tests when adding code to our repository.
+
+## Technology Stack
+- **Language**: Go 1.26.0
+- **GraphQL**: gqlgen for schema-first GraphQL API
+- **Authorization**: OpenFGA for fine-grained access control (gRPC client)
+- **Identity**: Keycloak integration for user management
+- **Multi-cluster**: KCP (Kubernetes Control Plane) for resource management
+- **Build**: Task (Taskfile.yaml)
+- **Testing**: Standard Go testing with testify
+- **Logging**: zerolog for structured logging
+
+## Generative AI
+
+If you use generative AI tools while preparing a contribution, you remain responsible for the correctness, safety, licensing, and maintainability of the submitted change.
+
+If you use Claude while contributing, do not assume it will automatically pick up this repository's `AGENTS.md`. Explicitly provide or reference `AGENTS.md` at the start of the session so Claude has the repository-specific instructions before it suggests or applies changes.
+
+## Issues
+We use GitHub issues to track bugs. Please ensure your description is
+clear and includes sufficient instructions to reproduce the issue.

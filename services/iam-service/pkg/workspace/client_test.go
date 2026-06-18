@@ -1,0 +1,170 @@
+package workspace
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	accountmocks "github.com/platform-mesh/account-operator/pkg/subroutines/mocks"
+	"github.com/platform-mesh/golang-commons/logger"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+)
+
+// Provider is a test provider for the multicluster manager
+type Provider struct {
+	clusters map[string]cluster.Cluster
+}
+
+func (p *Provider) Get(ctx context.Context, clusterName string) (cluster.Cluster, error) {
+	cluster, ok := p.clusters[clusterName]
+	if !ok {
+		return nil, fmt.Errorf("cluster not found: %s", clusterName)
+	}
+	return cluster, nil
+}
+
+func (p *Provider) IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
+	return nil
+}
+
+func TestNewClientFactory(t *testing.T) {
+	emptyConfig := &rest.Config{
+		Host: "https://test-host.example.com",
+	}
+	testProvider := &Provider{clusters: map[string]cluster.Cluster{}}
+
+	mgr, err := mcmanager.New(emptyConfig, testProvider, mcmanager.Options{})
+	require.NoError(t, err)
+
+	factory := NewClientFactory(mgr)
+
+	assert.NotNil(t, factory)
+	assert.Equal(t, mgr, factory.mgr)
+}
+
+func TestKCPClient_New_Success(t *testing.T) {
+	tests := []struct {
+		name        string
+		accountPath string
+	}{
+		{
+			name:        "valid account path",
+			accountPath: "root:org:account",
+		},
+		{
+			name:        "account path with special characters",
+			accountPath: "root:my-org:my-account-123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			mockCluster := accountmocks.NewCluster(t)
+			mockCluster.On("GetClient").Return(fakeClient)
+
+			testProvider := &Provider{
+				clusters: map[string]cluster.Cluster{
+					tt.accountPath: mockCluster,
+				},
+			}
+			emptyConfig := &rest.Config{
+				Host: "https://test-host.example.com",
+			}
+
+			mgr, err := mcmanager.New(emptyConfig, testProvider, mcmanager.Options{})
+			require.NoError(t, err)
+
+			log, err := logger.New(logger.Config{Level: "info"})
+			require.NoError(t, err)
+			ctx := logger.SetLoggerInContext(context.Background(), log)
+
+			factory := NewClientFactory(mgr)
+
+			result, err := factory.New(ctx, tt.accountPath)
+
+			assert.NoError(t, err)
+			assert.NotNil(t, result)
+			assert.Equal(t, fakeClient, result)
+		})
+	}
+}
+
+func TestKCPClient_New_Error(t *testing.T) {
+	accountPath := "root:nonexistent:account"
+
+	testProvider := &Provider{
+		clusters: map[string]cluster.Cluster{},
+	}
+	emptyConfig := &rest.Config{
+		Host: "https://test-host.example.com",
+	}
+
+	mgr, err := mcmanager.New(emptyConfig, testProvider, mcmanager.Options{})
+	require.NoError(t, err)
+
+	log, err := logger.New(logger.Config{Level: "info"})
+	require.NoError(t, err)
+	ctx := logger.SetLoggerInContext(context.Background(), log)
+
+	factory := NewClientFactory(mgr)
+
+	result, err := factory.New(ctx, accountPath)
+
+	assert.Error(t, err)
+	assert.Nil(t, result)
+	assert.Contains(t, err.Error(), "cluster not found")
+}
+
+func TestKCPClient_New_MultipleClients(t *testing.T) {
+	scheme := runtime.NewScheme()
+	fakeClient1 := fake.NewClientBuilder().WithScheme(scheme).Build()
+	fakeClient2 := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	mockCluster1 := accountmocks.NewCluster(t)
+	mockCluster1.On("GetClient").Return(fakeClient1)
+
+	mockCluster2 := accountmocks.NewCluster(t)
+	mockCluster2.On("GetClient").Return(fakeClient2)
+
+	testProvider := &Provider{
+		clusters: map[string]cluster.Cluster{
+			"root:org1:account1": mockCluster1,
+			"root:org2:account2": mockCluster2,
+		},
+	}
+	emptyConfig := &rest.Config{
+		Host: "https://test-host.example.com",
+	}
+
+	mgr, err := mcmanager.New(emptyConfig, testProvider, mcmanager.Options{})
+	require.NoError(t, err)
+
+	log, err := logger.New(logger.Config{Level: "info"})
+	require.NoError(t, err)
+	ctx := logger.SetLoggerInContext(context.Background(), log)
+
+	factory := NewClientFactory(mgr)
+
+	client1, err := factory.New(ctx, "root:org1:account1")
+	require.NoError(t, err)
+	require.NotNil(t, client1)
+
+	client2, err := factory.New(ctx, "root:org2:account2")
+	require.NoError(t, err)
+	require.NotNil(t, client2)
+
+	// Verify that both clients were created successfully and are different
+	assert.NotEqual(t, client1, client2)
+	assert.Equal(t, fakeClient1, client1)
+	assert.Equal(t, fakeClient2, client2)
+}

@@ -1,0 +1,66 @@
+package accountinfo
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	kcpclientset "github.com/kcp-dev/sdk/client/clientset/versioned/cluster"
+	accountsv1alpha1 "github.com/platform-mesh/account-operator/api/v1alpha1"
+	"github.com/platform-mesh/account-operator/pkg/subroutines/manageaccountinfo"
+	"github.com/platform-mesh/golang-commons/logger"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+)
+
+type Retriever interface {
+	Get(ctx context.Context, accountPath string) (*accountsv1alpha1.AccountInfo, error)
+}
+
+type accountInfoRetriever struct {
+	mgr           mcmanager.Manager
+	clusterClient kcpclientset.ClusterInterface
+	clusterLocks  sync.Map
+}
+
+func New(mgr mcmanager.Manager, clusterClient kcpclientset.ClusterInterface) (Retriever, error) {
+	if clusterClient == nil || mgr == nil {
+		return nil, fmt.Errorf("cluster client and manager cannot be nil")
+	}
+	return &accountInfoRetriever{
+		mgr:           mgr,
+		clusterClient: clusterClient,
+	}, nil
+}
+
+func (a *accountInfoRetriever) Get(ctx context.Context, accountPath string) (*accountsv1alpha1.AccountInfo, error) {
+	log := logger.LoadLoggerFromContext(ctx)
+
+	//FIXME: This lock was necessary as we saw race conditions when processing multiple requests in parallel
+	// The issue occurs when a cluster is requested for the first time and multiple requests are processed simultaneously
+	// We will work with the KCP team to identify the root cause and remove this lock in future
+	mu := a.getClusterLock(accountPath)
+	mu.Lock()
+	defer mu.Unlock()
+
+	cc, err := a.mgr.GetCluster(ctx, accountPath)
+	if err != nil { // coverage-ignore
+		log.Error().Err(err).Msg("failed to get cluster from manager")
+		return nil, err
+	}
+
+	cl := cc.GetClient()
+	ai := &accountsv1alpha1.AccountInfo{}
+	err = cl.Get(ctx, client.ObjectKey{Name: manageaccountinfo.DefaultAccountInfoName}, ai)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get orgs workspace from kcp")
+		return nil, err
+	}
+	log.Debug().Msg("retrieved account info successfully")
+	return ai, nil
+}
+
+func (a *accountInfoRetriever) getClusterLock(clusterName string) *sync.Mutex {
+	lock, _ := a.clusterLocks.LoadOrStore(clusterName, &sync.Mutex{})
+	return lock.(*sync.Mutex)
+}
