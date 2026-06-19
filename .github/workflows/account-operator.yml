@@ -162,14 +162,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
-      semver: ${{ steps.v.outputs.semver }}
     steps:
       - name: Derive version from tag
         id: v
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/account-operator/}"
-          echo "version=${VERSION}"   >> "$GITHUB_OUTPUT"   # vX.Y.Z — image tag
-          echo "semver=${VERSION#v}"  >> "$GITHUB_OUTPUT"   # X.Y.Z — naked OCM/chart version
+        # Naked semver (leading v stripped): used everywhere downstream — image
+        # tag, OCM component version and helm chart/appVersion — so there is one
+        # consistent version with no v/naked split.
+        run: echo "version=${GITHUB_REF#refs/tags/account-operator/v}" >> "$GITHUB_OUTPUT"
 
   docker-build-push:
     if: startsWith(github.ref, 'refs/tags/account-operator/')
@@ -251,16 +250,6 @@ jobs:
           name: ${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  update-version:
-    if: startsWith(github.ref, 'refs/tags/account-operator/')
-    needs: [version, docker-build-push]
-    uses: platform-mesh/.github/.github/workflows/job-chart-version-update.yml@main
-    secrets: inherit
-    with:
-      appVersion: ${{ needs.version.outputs.version }}
-      chart: account-operator
-      targetRepository: platform-mesh/helm-charts
-
   image-ocm:
     if: startsWith(github.ref, 'refs/tags/account-operator/')
     needs: [version, docker-build-push]
@@ -268,8 +257,7 @@ jobs:
     secrets: inherit
     with:
       imageReference: ghcr.io/platform-mesh/platform-mesh/account-operator:${{ needs.version.outputs.version }}
-      # naked semver (no leading v) — OCM/helm convention
-      appVersion: ${{ needs.version.outputs.semver }}
+      appVersion: ${{ needs.version.outputs.version }}
       # The reusable job signs with "<repoName>.platform-mesh" and OCM requires
       # that to equal the signing cert's CN. The monorepo's shared OCM cert has
       # CN "platform-mesh.platform-mesh", so repoName must be platform-mesh. The
