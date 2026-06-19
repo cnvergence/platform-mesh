@@ -25,7 +25,7 @@ includes:
     dir: .
 
 vars:
-  COMPONENTS: apis account-operator security-operator
+  COMPONENTS: apis account-operator security-operator 
 
 tasks:
   default:
@@ -60,6 +60,17 @@ tasks:
     cmds:
       - for: {var: COMPONENTS}
         cmd: task build-{{.ITEM}}
+  images:
+    desc: 'Build container images for every component that ships a Dockerfile (VERSION=, PUSH=, PLATFORMS= to override).'
+    cmds:
+      - for: {var: COMPONENTS}
+        task: images-{{.ITEM}}
+        vars:
+          REGISTRY: '{{.REGISTRY}}'
+          REPO: '{{.REPO}}'
+          VERSION: '{{.VERSION}}'
+          PUSH: '{{.PUSH}}'
+          PLATFORMS: '{{.PLATFORMS}}'
 
   # ---------------------------------------------------------------------------
   # Per-component targets. Each delegates to the component's own Taskfile.
@@ -92,6 +103,28 @@ tasks:
     cmds:
       - task: _run
         vars: {COMPONENT: "{{index .MATCH 0}}", TARGET: build}
+  "images-*":
+    desc: "Build (and optionally push) one component's image (e.g. task images-account-operator VERSION=v0.1.0 PUSH=true)."
+    vars:
+      # Defaults match the release pipeline's image naming; override on the CLI.
+      REGISTRY: '{{.REGISTRY | default "ghcr.io"}}'
+      REPO: '{{.REPO | default "platform-mesh/platform-mesh"}}'   # ghcr namespace: <registry>/<repo>/<name>
+      VERSION: '{{.VERSION | default "dev"}}'                     # image tag; also pushed without leading "v"
+      PUSH: '{{.PUSH | default "false"}}'                          # true -> buildx --push, false -> --load
+      PLATFORMS: '{{.PLATFORMS | default "linux/amd64"}}'          # multi-arch (e.g. linux/amd64,linux/arm64) requires PUSH=true
+      CONTEXT: '{{.CONTEXT | default "."}}'                         # build context; repo root by default (shared go.work)
+      METADATA_FILE: '{{.METADATA_FILE | default ""}}'             # write buildx metadata (incl. containerimage.digest) here for signing
+    cmds:
+      - task: _image
+        vars:
+          COMPONENT: "{{index .MATCH 0}}"
+          REGISTRY: "{{.REGISTRY}}"
+          REPO: "{{.REPO}}"
+          VERSION: "{{.VERSION}}"
+          PUSH: "{{.PUSH}}"
+          PLATFORMS: "{{.PLATFORMS}}"
+          CONTEXT: "{{.CONTEXT}}"
+          METADATA_FILE: "{{.METADATA_FILE}}"
 
   # Resolve a component name to its directory and delegate to its Taskfile.
   _run:
@@ -110,11 +143,64 @@ tasks:
         fi
         task --dir "$dir" "$target"
 
+  # Build (and optionally push) a single component image. Mirrors how the release
+  # workflows build the operator images (root context + shared go.work), so a
+  # local `task images-<name>` reproduces the CI image.
+  _image:
+    internal: true
+    silent: true
+    cmds:
+      - |
+        set -eu
+        comp='{{.COMPONENT}}'
+        dir=''
+        for p in "$comp" "operators/$comp" "services/$comp"; do
+          if [ -d "$p" ]; then dir="$p"; break; fi
+        done
+        if [ -z "$dir" ]; then
+          echo "unknown component '$comp' (not under ./, ./operators/ or ./services/)" >&2
+          exit 1
+        fi
+        # apis and other code-only modules ship no Dockerfile — skip, don't fail,
+        # so the `images` fan-out can iterate every component.
+        if [ ! -f "$dir/Dockerfile" ]; then
+          echo ">> $comp: no Dockerfile in $dir — skipping image build"
+          exit 0
+        fi
+
+        version='{{.VERSION}}'
+        image='{{.REGISTRY}}/{{.REPO}}'/"$comp"
+
+        # Build context is the repo ROOT: the operator Dockerfiles use the shared
+        # go.work + apis module, so they COPY root-relative paths. A self-contained
+        # component can override with CONTEXT=<dir>.
+        context='{{.CONTEXT | default "."}}'
+
+        push_flag='--load'
+        [ '{{.PUSH}}' = 'true' ] && push_flag='--push'
+
+        # Single tag: image:VERSION (e.g. v0.1.0, latest, pr-N, dev).
+        set -- -t "$image:$version"
+
+        # Optional: emit buildx metadata (incl. containerimage.digest) so callers
+        # like the release workflow can cosign-sign the pushed image by digest.
+        meta='{{.METADATA_FILE}}'
+        [ -n "$meta" ] && set -- "$@" --metadata-file "$meta"
+
+        echo ">> building $image:$version (context=$context platforms={{.PLATFORMS}} push={{.PUSH}})"
+        docker buildx build \
+          --file "$dir/Dockerfile" \
+          --platform '{{.PLATFORMS}}' \
+          "$push_flag" \
+          "$@" \
+          "$context"
+
   # ---------------------------------------------------------------------------
-  # Release: cut a per-component semver tag (cmd/release). The tag triggers
-  # .github/workflows/component-release.yaml, which builds + pushes the image
-  # (and chart, if the component ships one). `apis` tags are go-gettable module
-  # tags only. Pass component + flags after `--`, e.g.:
+  # Release: cut a per-component semver tag (cmd/release). The tag (<name>/v*)
+  # triggers that component's release workflow (e.g. account-operator.yml), which
+  # builds + signs the image, cuts a GitHub release, bumps the chart and publishes
+  # SBOM + OCM. `apis` tags are go-gettable module tags only. Pass component +
+  # flags after `--`, e.g.:
   #   task release -- account-operator --minor
   #   task release -- all --dry-run
   # ---------------------------------------------------------------------------

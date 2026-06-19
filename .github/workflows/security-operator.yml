@@ -105,14 +105,16 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
-      - name: Build image
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
+      - uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
         with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          push: false
-          platforms: linux/amd64
-          tags: ${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image (no push)
+        run: |
+          task images-${{ env.COMPONENT }} \
+            VERSION=pr-${{ github.event.pull_request.number }} \
+            REPO=${{ github.repository }} \
+            PLATFORMS=linux/amd64 \
+            PUSH=false
 
   # ──────────────────────────────────────────────
   # main: build and push the mutable :latest image.
@@ -134,18 +136,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+      - uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push :latest
         id: build
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ env.IMAGE_NAME }}:latest
-          secrets: |
-            github_token=${{ secrets.GITHUB_TOKEN }}
-            common_repository_token=${{ secrets.COMMON_REPOSITORY_TOKEN }}
+        run: |
+          task images-${{ env.COMPONENT }} \
+            VERSION=latest \
+            REPO=${{ github.repository }} \
+            PLATFORMS=linux/amd64,linux/arm64 \
+            PUSH=true \
+            METADATA_FILE="${{ runner.temp }}/metadata.json"
+          echo "digest=$(jq -r '."containerimage.digest"' "${{ runner.temp }}/metadata.json")" >> "$GITHUB_OUTPUT"
       - name: Install Cosign
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - name: Sign container image
@@ -159,10 +162,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      semver: ${{ steps.v.outputs.semver }}
     steps:
       - name: Derive version from tag
         id: v
-        run: echo "version=${GITHUB_REF#refs/tags/security-operator/}" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/security-operator/}"
+          echo "version=${VERSION}"   >> "$GITHUB_OUTPUT"   # vX.Y.Z — image tag
+          echo "semver=${VERSION#v}"  >> "$GITHUB_OUTPUT"   # X.Y.Z — naked OCM/chart version
 
   docker-build-push:
     if: startsWith(github.ref, 'refs/tags/security-operator/')
@@ -181,22 +188,58 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
+      - uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push version
         id: build
-        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
-        with:
-          context: .
-          file: ${{ env.DOCKERFILE }}
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}
-          secrets: |
-            github_token=${{ secrets.GITHUB_TOKEN }}
-            common_repository_token=${{ secrets.COMMON_REPOSITORY_TOKEN }}
+        run: |
+          task images-${{ env.COMPONENT }} \
+            VERSION=${{ needs.version.outputs.version }} \
+            REPO=${{ github.repository }} \
+            PLATFORMS=linux/amd64,linux/arm64 \
+            PUSH=true \
+            METADATA_FILE="${{ runner.temp }}/metadata.json"
+          echo "digest=$(jq -r '."containerimage.digest"' "${{ runner.temp }}/metadata.json")" >> "$GITHUB_OUTPUT"
       - name: Install Cosign
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - name: Sign container image
         run: cosign sign --yes ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+      # Generate SBOMs from the pushed image (by digest) and attach them to the
+      # image as signed cosign attestations — verifiable with
+      # `cosign verify-attestation`. The SBOMs are also kept as workflow artifacts.
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom-cyclonedx.json
+          upload-release-assets: false
+          upload-artifact: false
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-spdx.json
+          upload-release-assets: false
+          upload-artifact: false
+      # The image-ocm job downloads this `sbom` artifact and embeds both files
+      # as OCM resources (sbom-cyclonedx / sbom-spdx).
+      - name: Upload SBOM artifact (consumed by image-ocm)
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: sbom
+          path: |
+            sbom-cyclonedx.json
+            sbom-spdx.json
+          retention-days: 1
+      - name: Attest SBOMs to image
+        run: |
+          cosign attest --yes --type cyclonedx --predicate sbom-cyclonedx.json \
+            ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          cosign attest --yes --type spdxjson --predicate sbom-spdx.json \
+            ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
       - name: Create Release
         uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
         with:
@@ -218,22 +261,21 @@ jobs:
       chart: security-operator
       targetRepository: platform-mesh/helm-charts
 
-  sbom:
-    if: startsWith(github.ref, 'refs/tags/security-operator/')
-    needs: [version, docker-build-push]
-    uses: platform-mesh/.github/.github/workflows/job-sbom.yml@main
-    with:
-      imageReference: ghcr.io/platform-mesh/platform-mesh/security-operator:${{ needs.version.outputs.version }}
-
   image-ocm:
     if: startsWith(github.ref, 'refs/tags/security-operator/')
-    needs: [version, docker-build-push, sbom]
+    needs: [version, docker-build-push]
     uses: platform-mesh/.github/.github/workflows/job-image-ocm.yml@main
     secrets: inherit
     with:
       imageReference: ghcr.io/platform-mesh/platform-mesh/security-operator:${{ needs.version.outputs.version }}
-      appVersion: ${{ needs.version.outputs.version }}
-      repoName: security-operator
+      # naked semver (no leading v) — OCM/helm convention
+      appVersion: ${{ needs.version.outputs.semver }}
+      # The reusable job signs with "<repoName>.platform-mesh" and OCM requires
+      # that to equal the signing cert's CN. The monorepo's shared OCM cert has
+      # CN "platform-mesh.platform-mesh", so repoName must be platform-mesh. The
+      # per-component OCM component identity is preserved via componentName.
+      repoName: platform-mesh
+      componentName: github.com/platform-mesh/images/security-operator
       commit: ${{ github.sha }}
       # Store the OCM component under this repo (owned by its GITHUB_TOKEN),
       # not the org root, to avoid cross-repo package permissions.

@@ -1,15 +1,15 @@
 // Command release cuts release tags for platform-mesh monorepo components.
 //
 // Each component has its own tag namespace and independent version line. The tag
-// prefix is the component's directory path, which doubles as the Go-module tag
-// path for go-gettable modules:
+// prefix is the component name (for go-gettable modules it is also the module's
+// directory path, so the tag doubles as the Go-module tag):
 //
-//	apis               apis/v<X.Y.Z>                          go-gettable module tag for
-//	                                                          platform-mesh.io/apis (no image)
-//	account-operator   operators/account-operator/v<X.Y.Z>    component-release.yaml builds +
-//	                                                          pushes the image (+ chart if present)
-//	security-operator  operators/security-operator/v<X.Y.Z>   component-release.yaml builds +
-//	                                                          pushes the image (+ chart if present)
+//	apis               apis/v<X.Y.Z>               go-gettable module tag for
+//	                                               platform-mesh.io/apis (no image)
+//	account-operator   account-operator/v<X.Y.Z>   account-operator.yml: signed image,
+//	                                               GitHub release, chart bump, SBOM, OCM
+//	security-operator  security-operator/v<X.Y.Z>  security-operator.yml: signed image,
+//	                                               GitHub release, chart bump, SBOM, OCM
 //
 // It finds the component's latest existing tag, bumps it (patch by default),
 // and creates + pushes the new tag — the release workflow does the rest.
@@ -18,7 +18,7 @@
 //
 //	release <component|all> [flags]
 //
-//	release account-operator             # bump operators/account-operator/v* patch and push
+//	release account-operator             # bump account-operator/v* patch and push
 //	release apis --minor                 # bump apis/v* minor
 //	release account-operator --tag v0.0.1   # explicit version
 //	release all --dry-run                # preview every component's next tag
@@ -61,8 +61,8 @@ var componentOrder = []string{"apis", "account-operator", "security-operator"}
 
 var components = map[string]component{
 	"apis":              {"apis/v", "go-gettable module tag for platform-mesh.io/apis (no image)"},
-	"account-operator":  {"operators/account-operator/v", "component-release.yaml builds + pushes ghcr.io/platform-mesh/platform-mesh/account-operator image (+ chart if present)"},
-	"security-operator": {"operators/security-operator/v", "component-release.yaml builds + pushes ghcr.io/platform-mesh/platform-mesh/security-operator image (+ chart if present)"},
+	"account-operator":  {"account-operator/v", "account-operator.yml: builds + signs the image, cuts a GitHub release, bumps the chart, publishes SBOM + signed OCM component"},
+	"security-operator": {"security-operator/v", "security-operator.yml: builds + signs the image, cuts a GitHub release, bumps the chart, publishes SBOM + signed OCM component"},
 }
 
 func main() {
@@ -384,9 +384,9 @@ Usage:
   release <component|all> [flags]
 
 Components:
-  apis               apis/v<X.Y.Z>                          (go-gettable module tag, no image)
-  account-operator   operators/account-operator/v<X.Y.Z>    (image + chart)
-  security-operator  operators/security-operator/v<X.Y.Z>   (image + chart)
+  apis               apis/v<X.Y.Z>               (go-gettable module tag, no image)
+  account-operator   account-operator/v<X.Y.Z>   (signed image + release + chart + SBOM + OCM)
+  security-operator  security-operator/v<X.Y.Z>  (signed image + release + chart + SBOM + OCM)
   all                every component (independent versions)
 
 Flags:
@@ -399,7 +399,7 @@ Flags:
   -y, --yes        skip the confirmation prompt
 
 Examples:
-  release account-operator            bump operators/account-operator/v* patch and push
+  release account-operator            bump account-operator/v* patch and push
   release apis --minor                bump apis/v* minor
   release account-operator --rc       cut the next rc (e.g. v0.0.2-rc1, then -rc2, ...)
   release account-operator --tag v0.0.1
