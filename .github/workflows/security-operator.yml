@@ -165,10 +165,8 @@ jobs:
     steps:
       - name: Derive version from tag
         id: v
-        # Naked semver (leading v stripped): used everywhere downstream — image
-        # tag, OCM component version and helm chart/appVersion — so there is one
-        # consistent version with no v/naked split.
-        run: echo "version=${GITHUB_REF#refs/tags/security-operator/v}" >> "$GITHUB_OUTPUT"
+        # vX.Y.Z (keeps the leading v) — used for the image tag and OCM.
+        run: echo "version=${GITHUB_REF#refs/tags/security-operator/}" >> "$GITHUB_OUTPUT"
 
   docker-build-push:
     if: startsWith(github.ref, 'refs/tags/security-operator/')
@@ -249,6 +247,17 @@ jobs:
           tag: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Disabled for now — re-enable by restoring the tag condition on `if`.
+  update-version:
+    if: false # startsWith(github.ref, 'refs/tags/security-operator/')
+    needs: [version, docker-build-push]
+    uses: platform-mesh/.github/.github/workflows/job-chart-version-update.yml@main
+    secrets: inherit
+    with:
+      appVersion: ${{ needs.version.outputs.version }}
+      chart: security-operator
+      targetRepository: platform-mesh/helm-charts
 
   image-ocm:
     if: startsWith(github.ref, 'refs/tags/security-operator/')
