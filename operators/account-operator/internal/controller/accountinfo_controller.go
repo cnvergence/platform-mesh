@@ -20,10 +20,10 @@ import (
 	"context"
 	"fmt"
 
-	platformmeshconfig "github.com/platform-mesh/golang-commons/config"
-	"github.com/platform-mesh/golang-commons/controller/filter"
-	"github.com/platform-mesh/golang-commons/controller/lifecycle/ratelimiter"
-	"github.com/platform-mesh/golang-commons/logger"
+	platformmeshconfig "go.platform-mesh.io/golang-commons/config"
+	"go.platform-mesh.io/golang-commons/controller/filter"
+	"go.platform-mesh.io/golang-commons/controller/lifecycle/ratelimiter"
+	"go.platform-mesh.io/golang-commons/logger"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -34,11 +34,11 @@ import (
 
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/platform-mesh/subroutines"
-	"github.com/platform-mesh/subroutines/lifecycle"
 	"go.platform-mesh.io/account-operator/internal/config"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/finalizeaccountinfo"
 	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
+	"go.platform-mesh.io/subroutines"
+	"go.platform-mesh.io/subroutines/lifecycle"
 )
 
 const accountInfoReconcilerName = "AccountInfoReconciler"

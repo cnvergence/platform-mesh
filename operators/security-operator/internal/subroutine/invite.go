@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/platform-mesh/golang-commons/controller/lifecycle/ratelimiter"
-	"github.com/platform-mesh/subroutines"
 	"github.com/rs/zerolog/log"
 	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
+	"go.platform-mesh.io/golang-commons/controller/lifecycle/ratelimiter"
 	iclient "go.platform-mesh.io/security-operator/internal/client"
+	"go.platform-mesh.io/subroutines"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
