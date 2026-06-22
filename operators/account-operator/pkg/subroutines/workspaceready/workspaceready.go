@@ -32,7 +32,7 @@ import (
 
 	"go.platform-mesh.io/account-operator/internal/metrics"
 	"go.platform-mesh.io/account-operator/pkg/clusteredname"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 var _ subroutines.Processor = (*WorkspaceReadySubroutine)(nil)

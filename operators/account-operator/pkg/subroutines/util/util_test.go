@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/util"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 func TestGetWorkspaceTypeName(t *testing.T) {

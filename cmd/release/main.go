@@ -5,7 +5,7 @@
 // directory path, so the tag doubles as the Go-module tag):
 //
 //	apis               apis/v<X.Y.Z>               go-gettable module tag for
-//	                                               platform-mesh.io/apis (no image)
+//	                                               go.platform-mesh.io/apis (no image)
 //	account-operator   account-operator/v<X.Y.Z>   account-operator.yml: signed image,
 //	                                               GitHub release, chart bump, SBOM, OCM
 //	security-operator  security-operator/v<X.Y.Z>  security-operator.yml: signed image,
@@ -60,7 +60,7 @@ type component struct {
 var componentOrder = []string{"apis", "account-operator", "security-operator"}
 
 var components = map[string]component{
-	"apis":              {"apis/v", "go-gettable module tag for platform-mesh.io/apis (no image)"},
+	"apis":              {"apis/v", "go-gettable module tag for go.platform-mesh.io/apis (no image)"},
 	"account-operator":  {"account-operator/v", "account-operator.yml: builds + signs the image, cuts a GitHub release, bumps the chart, publishes SBOM + signed OCM component"},
 	"security-operator": {"security-operator/v", "security-operator.yml: builds + signs the image, cuts a GitHub release, bumps the chart, publishes SBOM + signed OCM component"},
 }

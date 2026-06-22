@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 type BaseTuplesInput struct {

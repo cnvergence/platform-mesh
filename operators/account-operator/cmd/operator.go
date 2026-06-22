@@ -38,7 +38,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"go.platform-mesh.io/account-operator/internal/controller"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 var operatorCmd = &cobra.Command{

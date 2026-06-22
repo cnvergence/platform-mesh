@@ -19,7 +19,7 @@ package util
 import (
 	"fmt"
 
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 func GetWorkspaceTypeName(accountName string, accountType corev1alpha1.AccountType) string {

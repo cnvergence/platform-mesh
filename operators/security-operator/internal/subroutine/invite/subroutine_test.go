@@ -11,11 +11,11 @@ import (
 	"github.com/platform-mesh/golang-commons/logger/testlogger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 	"go.platform-mesh.io/security-operator/internal/config"
 	"go.platform-mesh.io/security-operator/internal/subroutine/invite"
 	"go.platform-mesh.io/security-operator/internal/subroutine/mocks"
 	"golang.org/x/oauth2"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
 

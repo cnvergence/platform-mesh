@@ -38,7 +38,7 @@ import (
 	"go.platform-mesh.io/account-operator/pkg/clusteredname"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/manageaccountinfo"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/util"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 var _ subroutines.Processor = (*WorkspaceSubroutine)(nil)

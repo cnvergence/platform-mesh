@@ -38,7 +38,7 @@ import (
 	"github.com/platform-mesh/subroutines/lifecycle"
 	"go.platform-mesh.io/account-operator/internal/config"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/finalizeaccountinfo"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 const accountInfoReconcilerName = "AccountInfoReconciler"

@@ -35,7 +35,7 @@ import (
 	"github.com/platform-mesh/golang-commons/logger/testlogger"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/finalizeaccountinfo"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/mocks"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 var _ multicluster.Provider = &Provider{}

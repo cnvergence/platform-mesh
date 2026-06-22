@@ -27,10 +27,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/mocks"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/workspaceready"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
 )

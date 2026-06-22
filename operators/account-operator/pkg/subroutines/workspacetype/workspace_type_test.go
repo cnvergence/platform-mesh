@@ -35,7 +35,7 @@ import (
 
 	"go.platform-mesh.io/account-operator/pkg/subroutines/mocks"
 	"go.platform-mesh.io/account-operator/pkg/subroutines/workspacetype"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 )
 
 func TestName(t *testing.T) {

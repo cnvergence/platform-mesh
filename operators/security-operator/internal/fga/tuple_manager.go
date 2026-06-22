@@ -6,8 +6,8 @@ import (
 
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
 	"github.com/platform-mesh/golang-commons/logger"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 	"go.platform-mesh.io/security-operator/internal/metrics"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
 )
 
 // AuthorizationModelIDLatest is to explicitely acknowledge that no ID means

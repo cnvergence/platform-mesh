@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/coreos/go-oidc"
+	corev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 	"go.platform-mesh.io/security-operator/internal/config"
 	"go.platform-mesh.io/security-operator/pkg/clientreg"
 	"go.platform-mesh.io/security-operator/pkg/clientreg/keycloak"
 	"golang.org/x/oauth2/clientcredentials"
-	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"

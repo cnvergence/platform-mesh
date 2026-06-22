@@ -1,4 +1,4 @@
-module platform-mesh.io/apis
+module go.platform-mesh.io/apis
 
 go 1.26.0
 
