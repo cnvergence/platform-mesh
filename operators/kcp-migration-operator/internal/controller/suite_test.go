@@ -1,3 +1,5 @@
+//go:build integration
+
 /*
 Copyright The Platform Mesh Authors.
 
