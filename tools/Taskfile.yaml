@@ -115,3 +115,15 @@ tasks:
       - test -s {{.BIN}}/go-test-coverage
     cmds:
       - GOBIN={{.BIN}} GOWORK=off go install github.com/vladopajic/go-test-coverage/v2@{{.GO_TEST_COVERAGE_VERSION}}
+
+  generate-crds:
+    internal: true
+    deps: [controller-gen]
+    cmds:
+      - '{{.BIN}}/controller-gen rbac:roleName=manager-role crd paths={{.TOPLEVEL}}/apis{{.PATH}} output:crd:artifacts:config={{.OUTPUT}}'
+
+  generate-deepcopy:
+    internal: true
+    deps: [controller-gen]
+    cmds:
+      - "{{.BIN}}/controller-gen object:headerFile={{.HACK}}/boilerplate/boilerplate.go.txt paths={{.TOPLEVEL}}/apis{{.PATH}}"

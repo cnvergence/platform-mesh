@@ -28,19 +28,19 @@ tasks:
   ## Development
   manifests:
     desc: Generate CRD manifests
-    deps: [tools:controller-gen]
     cmds:
-      - |
-        set -ex
-        cd {{.TOPLEVEL}}/apis
-        {{.BIN}}/controller-gen rbac:roleName=manager-role crd paths=./migration/... output:crd:artifacts:config=../operators/kcp-migration-operator/{{.CRD_DIRECTORY}}
+      - task: tools:generate-crds
+        vars:
+          PATH: /migration/...
+          OUTPUT: '{{.CRD_DIRECTORY}}'
 
   generate:
     desc: Generate code (deepcopy, manifests)
-    deps: [tools:controller-gen]
     cmds:
       - task: manifests
-      - "{{.BIN}}/controller-gen object:headerFile={{.HACK}}/boilerplate/boilerplate.go.txt paths=./..."
+      - task: tools:generate-deepcopy
+        vars:
+          PATH: /migration/...
 
   generate:mocks:
     desc: Generate mocks using mockery
