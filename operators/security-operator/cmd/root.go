@@ -7,7 +7,7 @@ import (
 	platformeshconfig "github.com/platform-mesh/golang-commons/config"
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/spf13/cobra"
-	"platform-mesh.io/security-operator/internal/config"
+	"go.platform-mesh.io/security-operator/internal/config"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"k8s.io/client-go/rest"

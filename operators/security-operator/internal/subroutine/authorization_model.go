@@ -12,10 +12,10 @@ import (
 	language "github.com/openfga/language/pkg/go/transformer"
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/platform-mesh/subroutines"
+	iclient "go.platform-mesh.io/security-operator/internal/client"
+	"go.platform-mesh.io/security-operator/internal/util"
 	"google.golang.org/protobuf/encoding/protojson"
 	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
-	iclient "platform-mesh.io/security-operator/internal/client"
-	"platform-mesh.io/security-operator/internal/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	mccontext "sigs.k8s.io/multicluster-runtime/pkg/context"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
@@ -58,7 +58,7 @@ type {{ .Group }}_{{ .Singular }}
 		define parent: [{{ if eq .Scope "Namespaced" }}core_namespace{{ else }}core_platform-mesh_io_account{{ end }}]
 		define member: [role#assignee] or owner or member from parent
 		define owner: [role#assignee] or owner from parent
-		
+
 		define get: member
 		define update: owner
 		define delete: owner

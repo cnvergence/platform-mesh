@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"platform-mesh.io/security-operator/internal/subroutine/mocks"
+	"go.platform-mesh.io/security-operator/internal/subroutine/mocks"
 )
 
 func closedServer(t *testing.T) *httptest.Server {

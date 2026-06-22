@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/platform-mesh/subroutines"
+	iclient "go.platform-mesh.io/security-operator/internal/client"
+	"go.platform-mesh.io/security-operator/internal/config"
+	"go.platform-mesh.io/security-operator/internal/fga"
 	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
-	iclient "platform-mesh.io/security-operator/internal/client"
-	"platform-mesh.io/security-operator/internal/config"
-	"platform-mesh.io/security-operator/internal/fga"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"

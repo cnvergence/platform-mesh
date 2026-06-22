@@ -7,9 +7,9 @@ import (
 
 	platformeshcontext "github.com/platform-mesh/golang-commons/context"
 	"github.com/spf13/cobra"
+	iclient "go.platform-mesh.io/security-operator/internal/client"
+	"go.platform-mesh.io/security-operator/internal/controller"
 	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
-	iclient "platform-mesh.io/security-operator/internal/client"
-	"platform-mesh.io/security-operator/internal/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"

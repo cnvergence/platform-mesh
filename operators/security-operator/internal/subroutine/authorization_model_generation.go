@@ -10,8 +10,8 @@ import (
 
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/platform-mesh/subroutines"
+	iclient "go.platform-mesh.io/security-operator/internal/client"
 	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
-	iclient "platform-mesh.io/security-operator/internal/client"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
@@ -78,7 +78,7 @@ type {{ .Group }}_{{ .Singular }}
 		define parent: [{{ if eq .Scope "Namespaced" }}core_namespace{{ else }}core_platform-mesh_io_account{{ end }}]
 		define member: [role#assignee] or owner or member from parent
 		define owner: [role#assignee] or owner from parent
-		
+
 		define get: member
 		define update: member
 		define delete: member

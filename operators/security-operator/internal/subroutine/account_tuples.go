@@ -8,10 +8,10 @@ import (
 	openfgav1 "github.com/openfga/api/proto/openfga/v1"
 	"github.com/platform-mesh/golang-commons/logger"
 	"github.com/platform-mesh/subroutines"
+	iclient "go.platform-mesh.io/security-operator/internal/client"
+	"go.platform-mesh.io/security-operator/internal/fga"
+	platformmeshpath "go.platform-mesh.io/security-operator/internal/platformmesh"
 	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
-	iclient "platform-mesh.io/security-operator/internal/client"
-	"platform-mesh.io/security-operator/internal/fga"
-	platformmeshpath "platform-mesh.io/security-operator/internal/platformmesh"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 

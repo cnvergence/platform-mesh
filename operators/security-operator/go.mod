@@ -1,4 +1,4 @@
-module platform-mesh.io/security-operator
+module go.platform-mesh.io/security-operator
 
 go 1.26.0
 

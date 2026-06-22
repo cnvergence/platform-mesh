@@ -9,10 +9,10 @@ import (
 	"github.com/platform-mesh/golang-commons/logger/testlogger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.platform-mesh.io/security-operator/internal/config"
+	"go.platform-mesh.io/security-operator/internal/subroutine"
+	"go.platform-mesh.io/security-operator/internal/subroutine/mocks"
 	corev1alpha1 "platform-mesh.io/apis/core/v1alpha1"
-	"platform-mesh.io/security-operator/internal/config"
-	"platform-mesh.io/security-operator/internal/subroutine"
-	"platform-mesh.io/security-operator/internal/subroutine/mocks"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 

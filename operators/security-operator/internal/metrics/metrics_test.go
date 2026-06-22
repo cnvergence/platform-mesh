@@ -5,7 +5,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/suite"
-	"platform-mesh.io/security-operator/internal/metrics"
+	"go.platform-mesh.io/security-operator/internal/metrics"
 )
 
 type MetricsTestSuite struct {
