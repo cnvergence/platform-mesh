@@ -1,6 +1,6 @@
 # kcp Migration Operator
 
-A Kubernetes operator for Platform Mesh that synchronizes custom resources from existing Kubernetes clusters to [kcp](https://docs.kcp.io/kcp/main/) (Kubernetes Control Plane) workspaces.
+A Kubernetes operator for Platform Mesh that synchronizes custom resources from existing Kubernetes clusters to [kcp](https://docs.kcp.io/kcp/main/) (Kubernetes-like Control Planes) workspaces.
 
 ## What is kcp?
 
