@@ -1,3 +1,19 @@
+/*
+Copyright The Platform Mesh Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package controller
 
 import (
@@ -38,17 +54,17 @@ func (h *ShardAssignHandler) Handle(_ context.Context, req admission.Request) ad
 	}
 	logger.Info("webhook assigning shard", "shard", shard)
 
-	var patch []map[string]interface{}
+	var patch []map[string]any
 	if labels == nil {
-		patch = []map[string]interface{}{
+		patch = []map[string]any{
 			{
 				"op":    "add",
 				"path":  "/metadata/labels",
-				"value": map[string]string{running.LabelKey: shard},
+				"value": map[string]string{running.LabelKey: shard}, //nolint:goconst
 			},
 		}
 	} else {
-		patch = []map[string]interface{}{
+		patch = []map[string]any{
 			{
 				"op":    "add",
 				"path":  "/metadata/labels/" + escapeJSONPointer(running.LabelKey),

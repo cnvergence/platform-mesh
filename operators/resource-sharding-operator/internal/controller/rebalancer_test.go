@@ -1,3 +1,20 @@
+/*
+Copyright The Platform Mesh Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+//nolint:goconst
 package controller
 
 import (
@@ -5,9 +22,9 @@ import (
 	"maps"
 	"testing"
 
-	"github.com/platform-mesh/resource-sharding-operator/api/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.platform-mesh.io/apis/sharding/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -80,9 +97,9 @@ func TestRebalancer_CountPerShard_WithItems(t *testing.T) {
 	scheme := newRebalancerScheme(t)
 
 	objs := []client.Object{
-		buildConfigMap("cm-1", "default", labelKey, "a"),
-		buildConfigMap("cm-2", "default", labelKey, "a"),
-		buildConfigMap("cm-3", "default", labelKey, "b"),
+		buildConfigMap("cm-1", corev1.NamespaceDefault, labelKey, "a"),
+		buildConfigMap("cm-2", corev1.NamespaceDefault, labelKey, "a"),
+		buildConfigMap("cm-3", corev1.NamespaceDefault, labelKey, "b"),
 	}
 
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
@@ -110,8 +127,8 @@ func TestRebalancer_CleanupOrphans_NoOrphans(t *testing.T) {
 	scheme := newRebalancerScheme(t)
 
 	objs := []client.Object{
-		buildConfigMap("cm-1", "default", labelKey, "valid-a"),
-		buildConfigMap("cm-2", "default", labelKey, "valid-b"),
+		buildConfigMap("cm-1", corev1.NamespaceDefault, labelKey, "valid-a"),
+		buildConfigMap("cm-2", corev1.NamespaceDefault, labelKey, "valid-b"),
 	}
 
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
@@ -135,8 +152,8 @@ func TestRebalancer_CleanupOrphans_StripsOrphanLabel(t *testing.T) {
 	scheme := newRebalancerScheme(t)
 
 	objs := []client.Object{
-		buildConfigMap("orphan-1", "default", labelKey, "deleted-shard"),
-		buildConfigMap("valid-1", "default", labelKey, "shard-a"),
+		buildConfigMap("orphan-1", corev1.NamespaceDefault, labelKey, "deleted-shard"),
+		buildConfigMap("valid-1", corev1.NamespaceDefault, labelKey, "shard-a"),
 	}
 
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
@@ -164,9 +181,9 @@ func TestRebalancer_AssignUnlabeled_AssignsToLeastLoaded(t *testing.T) {
 	scheme := newRebalancerScheme(t)
 
 	objs := []client.Object{
-		buildConfigMap("labeled-a-1", "default", labelKey, "shard-a"),
-		buildConfigMap("labeled-a-2", "default", labelKey, "shard-a"),
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "no-label", Namespace: "default"}},
+		buildConfigMap("labeled-a-1", corev1.NamespaceDefault, labelKey, "shard-a"),
+		buildConfigMap("labeled-a-2", corev1.NamespaceDefault, labelKey, "shard-a"),
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "no-label", Namespace: corev1.NamespaceDefault}},
 	}
 
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
@@ -188,7 +205,7 @@ func TestRebalancer_AssignUnlabeled_AssignsToLeastLoaded(t *testing.T) {
 	assert.Equal(t, 2, counts["shard-a"], "shard-a count should be unchanged")
 
 	var got corev1.ConfigMap
-	require.NoError(t, fc.Get(context.Background(), client.ObjectKey{Name: "no-label", Namespace: "default"}, &got))
+	require.NoError(t, fc.Get(context.Background(), client.ObjectKey{Name: "no-label", Namespace: corev1.NamespaceDefault}, &got))
 	assert.Equal(t, "shard-b", got.Labels[labelKey])
 }
 
@@ -197,7 +214,7 @@ func TestRebalancer_AssignUnlabeled_NoUnlabeledIsNoOp(t *testing.T) {
 	scheme := newRebalancerScheme(t)
 
 	objs := []client.Object{
-		buildConfigMap("labeled-a-1", "default", labelKey, "shard-a"),
+		buildConfigMap("labeled-a-1", corev1.NamespaceDefault, labelKey, "shard-a"),
 	}
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
 
@@ -222,7 +239,7 @@ func TestRebalancer_AssignUnlabeled_NoShardsIsNoOp(t *testing.T) {
 	scheme := newRebalancerScheme(t)
 
 	objs := []client.Object{
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "no-label", Namespace: "default"}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "no-label", Namespace: corev1.NamespaceDefault}},
 	}
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
 
@@ -345,7 +362,7 @@ func TestRebalancer_Rebalance_Math(t *testing.T) {
 				for range count {
 					objIdx++
 					name := "cm-" + shard + "-" + string([]rune{rune('a' + (objIdx/26)%26), rune('a' + objIdx%26)})
-					initObjs = append(initObjs, buildConfigMap(name, "default", labelKey, shard))
+					initObjs = append(initObjs, buildConfigMap(name, corev1.NamespaceDefault, labelKey, shard))
 				}
 			}
 
@@ -384,8 +401,8 @@ func TestRebalancer_Rebalance_MovesCapByToMove(t *testing.T) {
 	scheme := newRebalancerScheme(t)
 
 	initObjs := append(
-		buildConfigMaps("cm-", "default", labelKey, "shard-a", 8),
-		buildConfigMaps("cm-", "default", labelKey, "shard-b", 2)...,
+		buildConfigMaps("cm-", corev1.NamespaceDefault, labelKey, "shard-a", 8),
+		buildConfigMaps("cm-", corev1.NamespaceDefault, labelKey, "shard-b", 2)...,
 	)
 
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(initObjs...).Build()
@@ -430,8 +447,8 @@ func TestRebalancer_Run_AllBalanced(t *testing.T) {
 	scheme := newRebalancerScheme(t)
 
 	objs := []client.Object{
-		buildConfigMap("cm-1", "default", labelKey, "shard-a"),
-		buildConfigMap("cm-2", "default", labelKey, "shard-b"),
+		buildConfigMap("cm-1", corev1.NamespaceDefault, labelKey, "shard-a"),
+		buildConfigMap("cm-2", corev1.NamespaceDefault, labelKey, "shard-b"),
 	}
 
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
