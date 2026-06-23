@@ -164,6 +164,11 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      # Full image reference (name@digest) for downstream jobs. The env context
+      # is not available in a reusable-workflow `with:` block, so we assemble the
+      # ref here inside the step (where env works) and pass it via needs.
+      imageRef: ${{ steps.build.outputs.imageRef }}
     steps:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
@@ -185,11 +190,24 @@ jobs:
             PLATFORMS=linux/amd64,linux/arm64 \
             PUSH=true \
             METADATA_FILE="${{ runner.temp }}/metadata.json"
-          echo "digest=$(jq -r '."containerimage.digest"' "${{ runner.temp }}/metadata.json")" >> "$GITHUB_OUTPUT"
+          digest=$(jq -r '."containerimage.digest"' "${{ runner.temp }}/metadata.json")
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "imageRef=${IMAGE_NAME}@${digest}" >> "$GITHUB_OUTPUT"
       - name: Install Cosign
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
       - name: Sign container image
-        run: cosign sign --yes ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes ${{ steps.build.outputs.imageRef }}
+
+  trivy-image:
+    if: github.ref == 'refs/heads/main'
+    needs: [docker-build-latest]
+    uses: platform-mesh/.github/.github/workflows/job-trivy-image.yml@main
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    with:
+      imageRef: ${{ needs.docker-build-latest.outputs.imageRef }}
 
   # ──────────────────────────────────────────────
   # Tag account-operator/v*: dedicated immutable version release.
@@ -314,7 +332,8 @@ jobs:
       # not the org root, to avoid cross-repo package permissions.
       ocmRegistryUrl: ghcr.io/platform-mesh/platform-mesh
 
-  scan-sbom:
+  trivy-sbom:
+    if: startsWith(github.ref, 'refs/tags/account-operator/')
     needs: [version, docker-build-push, image-ocm]
     uses: platform-mesh/.github/.github/workflows/job-trivy-sbom.yml@main
     permissions:
