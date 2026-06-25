@@ -385,7 +385,7 @@ func (s *Service) fetchAllUsers(ctx context.Context, realm string) ([]*graph.Use
 		}
 
 		// If we got fewer users than page size, we've reached the end
-		if len(users) < int(pageSize) {
+		if len(users) < pageSize {
 			log.Debug().
 				Int("page", currentPage).
 				Int("users_on_page", len(users)).
@@ -423,7 +423,6 @@ func (s *Service) fetchUsersInParallel(ctx context.Context, realm string, emails
 
 	// Launch goroutines for each email using errgroup
 	for _, email := range emails {
-		email := email // capture loop variable
 		g.Go(func() error {
 			user, err := s.fetchUserFromKeycloak(gCtx, realm, email)
 			if err != nil {
