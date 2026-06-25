@@ -132,7 +132,7 @@ tasks:
     internal: true
     deps: [controller-gen]
     cmds:
-      - '{{.BIN}}/controller-gen rbac:roleName=manager-role crd paths={{.TOPLEVEL}}/apis{{.PATH}} output:crd:artifacts:config={{.OUTPUT}}'
+      - '{{.BIN}}/controller-gen rbac:roleName=manager-role crd:headerFile={{.HACK}}/boilerplate/boilerplate.yaml.txt paths={{.TOPLEVEL}}/apis{{.PATH}} output:crd:artifacts:config={{.OUTPUT}}'
 
   generate-deepcopy:
     internal: true
