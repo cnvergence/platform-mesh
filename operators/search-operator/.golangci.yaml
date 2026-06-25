@@ -13,31 +13,52 @@
 # limitations under the License.
 
 version: "2"
+run:
+  allow-parallel-runners: true
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - dupl
+    - errcheck
+    - ginkgolinter
+    - gocyclo
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - nakedret
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+  settings:
+    revive:
+      rules:
+        - name: comment-spacings
+        - name: import-shadowing
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - lll
+        path: api/*
+      - linters:
+          - dupl
+          - lll
+        path: internal/*
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 formatters:
   enable:
-    - gci
     - gofmt
-  settings:
-    gci:
-      sections:
-        - standard
-        - default
-        - prefix(k8s.io,sigs.k8s.io)
-        - prefix(sigs.k8s.io/multicluster-runtime)
-        - prefix(github.com/kcp-dev)
-        - prefix(github.com/kcp-dev/multicluster-provider)
-        - blank
-        - dot
-      custom-order: true
-    gofmt:
-      rewrite-rules:
-        - pattern: 'interface{}'
-          replacement: 'any'
   exclusions:
     generated: lax
     paths:
-      - zz_generated.*\.go$
-      - .*conversion.*\.go$
       - third_party$
       - builtin$
       - examples$
