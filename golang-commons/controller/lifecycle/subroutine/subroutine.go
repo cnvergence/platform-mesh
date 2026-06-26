@@ -32,7 +32,7 @@ type Subroutine interface {
 	Finalizers(instance runtimeobject.RuntimeObject) []string
 }
 
-// Terminator can be implemeted to act as KCP terminator[0], i.e. act on
+// Terminator can be implemented to act as KCP terminator[0], i.e. act on
 // reconciles for LogicalClusters with deletion timestamp but without finalizer.
 // Use together with LifecycleManager.WithTerminator(string) to ensure removal
 // of the terminator on successful reconciliation.

@@ -45,7 +45,7 @@ func TestSetRequestIdWithIncomingHeader(t *testing.T) {
 	handlerToTest.ServeHTTP(httptest.NewRecorder(), req)
 }
 
-func TestSetRequestIdWitoutIncomingHeader(t *testing.T) {
+func TestSetRequestIdWithoutIncomingHeader(t *testing.T) {
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		val := GetRequestId(r.Context())
 		assert.Len(t, val, 36)

@@ -91,7 +91,7 @@ func (m *CachingStoreIDGetter) Get(ctx context.Context, storeName string) (strin
 
 type storeIDLoader struct {
 	fga       openfgav1.OpenFGAServiceClient
-	loadErrer error
+	loadError error
 	loadCtx   context.Context
 }
 
@@ -108,7 +108,7 @@ func (l *storeIDLoader) Load(c *ttlcache.Cache[string, string], storeName string
 			ContinuationToken: continuationToken,
 		})
 		if err != nil {
-			l.loadErrer = fmt.Errorf("listing Stores in OpenFGA: %w", err)
+			l.loadError = fmt.Errorf("listing Stores in OpenFGA: %w", err)
 			return nil
 		}
 
@@ -131,7 +131,7 @@ func (l *storeIDLoader) Load(c *ttlcache.Cache[string, string], storeName string
 // this.
 // [0] https://github.com/jellydator/ttlcache/issues/74#issuecomment-1133012806
 func (l *storeIDLoader) Err() error {
-	return l.loadErrer
+	return l.loadError
 }
 
 var _ StoreIDGetter = (*CachingStoreIDGetter)(nil)

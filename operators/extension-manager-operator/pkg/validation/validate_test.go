@@ -151,7 +151,7 @@ func TestValidate(t *testing.T) {
 		},
 		{
 			name:        "test_node_category_invalidobject",
-			input:       validation_test.GetInalidYAML_node_category_object(),
+			input:       validation_test.GetInvalidYAML_node_category_object(),
 			contentType: "yaml",
 			expected:    "",
 			expectError: true,

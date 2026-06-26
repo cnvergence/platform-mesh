@@ -29,7 +29,7 @@ const (
 	rootWorkspace = "root"
 	orgsWorkspace = "orgs"
 
-	kcpWorkpaceSeparator = ":"
+	kcpWorkspaceSeparator = ":"
 )
 
 // IsPlatformMeshAccountPath returns whether a value is a platform-mesh account
@@ -37,7 +37,7 @@ const (
 // workspace tree "root:orgs".
 func IsPlatformMeshAccountPath(value string) bool {
 	_, valid := logicalcluster.NewValidatedPath(value)
-	parts := strings.Split(value, kcpWorkpaceSeparator)
+	parts := strings.Split(value, kcpWorkspaceSeparator)
 
 	return valid && len(parts) > 2 && parts[0] == rootWorkspace && parts[1] == orgsWorkspace
 }
@@ -70,14 +70,14 @@ func NewAccountPathFromLogicalCluster(lc *kcpcorev1alpha1.LogicalCluster) (Accou
 
 // IsOrg returns true if the AccountPath is an organisation.
 func (a AccountPath) IsOrg() bool {
-	parts := strings.Split(a.String(), kcpWorkpaceSeparator)
+	parts := strings.Split(a.String(), kcpWorkspaceSeparator)
 	return len(parts) == 3
 }
 
 // Org returns the AccountPath's parent organisation.
 func (a AccountPath) Org() AccountPath {
-	parts := strings.Split(a.String(), kcpWorkpaceSeparator)
+	parts := strings.Split(a.String(), kcpWorkspaceSeparator)
 	return AccountPath{
-		Path: logicalcluster.NewPath(strings.Join(parts[:3], kcpWorkpaceSeparator)),
+		Path: logicalcluster.NewPath(strings.Join(parts[:3], kcpWorkspaceSeparator)),
 	}
 }

@@ -37,7 +37,7 @@ The account model that operates is platform specific. The account model is mostl
 This option involves creating a new CRD in that can be used to define the account model from an external perspective but can be used in kcp, with accounts managed as custom resources.
 This option implements accounts as CRDs with a strict 1:1 mapping to KCP workspaces, using initializers for atomic creation and setup.
 The account CRD should be the minimum frame, not to grow. There need to be other ways to extend partner/customer specific account implementation for platform.
-The account model itself is living outside KCP and can be managed external from it, but kcp needs to work with that model to achive account models goals.
+The account model itself is living outside KCP and can be managed external from it, but kcp needs to work with that model to achieve account models goals.
 
 ```mermaid
 graph TD
@@ -213,7 +213,7 @@ The proposal is to with option 1, and the poc for the MVP can then validate that
 - Custom initializers for different providers within kcp
 - Pluggable initialization steps
 - Support for future requirements
-- account model can be extended and defined as per need basis independent of kcp, but allows platform operators to custome to their own needs
+- account model can be extended and defined as per need basis independent of kcp, but allows platform operators to customize to their own needs
 
 4. Operational Benefits:
 - Clear status tracking

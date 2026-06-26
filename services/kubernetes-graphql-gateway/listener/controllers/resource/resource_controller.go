@@ -153,7 +153,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ct
 		}
 	}
 
-	// This is plugable function to get cluster metadata for the given cluster name.
+	// This is pluggable function to get cluster metadata for the given cluster name.
 	var metadata *pmgatewayv1alpha1.ClusterMetadata
 	if r.clusterMetadataFunc != nil {
 		var err error

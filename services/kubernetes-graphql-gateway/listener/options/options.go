@@ -74,7 +74,7 @@ type ExtraOptions struct {
 	// GRPCMaxSendMsgSize is the maximum gRPC message size in bytes the server will send.
 	GRPCMaxSendMsgSize int
 
-	AdditonalPathAnnotationKey string
+	AdditionalPathAnnotationKey string
 
 	// CacheNamespaces restricts the cache to these namespaces for namespaced resources.
 	// Cluster-scoped resources are unaffected.
@@ -157,7 +157,7 @@ func (options *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&options.AnchorResource, "anchor-resource", options.AnchorResource, "Resource to watch as anchor for kubernetes provider (default: default)")
 	fs.StringVar(&options.ResourceGVR, "reconciler-gvr", options.ResourceGVR, "The GroupVersionResource which the reconciler will be watching (default: namespaces.v1)")
 
-	fs.StringVar(&options.AdditonalPathAnnotationKey, "additional-path-annotation-key", options.AdditonalPathAnnotationKey, "additional path annotation key for workspace schema generation")
+	fs.StringVar(&options.AdditionalPathAnnotationKey, "additional-path-annotation-key", options.AdditionalPathAnnotationKey, "additional path annotation key for workspace schema generation")
 
 	fs.StringSliceVar(&options.CacheNamespaces, "cache-namespaces", options.CacheNamespaces, "Namespaces to restrict the cache to for namespaced resources (e.g. secrets, configmaps). Cluster-scoped resources are unaffected. When empty, all namespaces are cached")
 

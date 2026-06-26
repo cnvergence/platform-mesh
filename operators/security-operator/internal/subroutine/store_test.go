@@ -287,7 +287,7 @@ func TestFinalize(t *testing.T) {
 			},
 		},
 		{
-			name: "should not reconcile successfully deletion is errorneous",
+			name: "should not reconcile successfully deletion is erroneous",
 			store: &pmcorev1alpha1.Store{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "store",

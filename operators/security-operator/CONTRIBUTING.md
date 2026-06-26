@@ -43,7 +43,7 @@ docker build -t <image name which is used in the cluster with the tag> .
 
 kind load docker-image <image name which is used in the cluster with the tag> --name=platform-mesh
 ```
-After it you need to restart security operator's pods and they will fetch a local image automaticly
+After it you need to restart security operator's pods and they will fetch a local image automatically
 
 If you want to use another image name and tag use this approach
 

@@ -439,7 +439,7 @@ func GetValidJSON_node_category_object() string {
 }`
 }
 
-func GetInalidYAML_node_category_object() string {
+func GetInvalidYAML_node_category_object() string {
 	return `
 name: overview2
 luigiConfigFragment:

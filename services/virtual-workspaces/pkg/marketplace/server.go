@@ -84,7 +84,7 @@ func BuildVirtualWorkspace(
 
 				marketplaceFilter := storage.Marketplace(provider, cfg)
 
-				storeageProvider := storage.CreateStorageProviderFunc(
+				storageProvider := storage.CreateStorageProviderFunc(
 					dynamicClient,
 					marketplaceFilter,
 				)
@@ -95,7 +95,7 @@ func BuildVirtualWorkspace(
 					Resource: resourceSchema.Spec.Names.Plural,
 				}
 
-				return apidefinition.NewSingleResourceProvider(mainConfig, gvr, &resourceSchema, storeageProvider), nil
+				return apidefinition.NewSingleResourceProvider(mainConfig, gvr, &resourceSchema, storageProvider), nil
 			},
 		},
 	}
