@@ -142,6 +142,12 @@ tasks:
     cmds:
       - '{{.BIN}}/controller-gen rbac:roleName=manager-role crd:headerFile={{.HACK}}/boilerplate/boilerplate.yaml.txt paths={{.TOPLEVEL}}/apis{{.PATH}} output:crd:artifacts:config={{.OUTPUT}}'
 
+  generate-rbac:
+    internal: true
+    deps: [controller-gen]
+    cmds:
+      - '{{.BIN}}/controller-gen rbac:roleName=manager-role,headerFile={{.HACK}}/boilerplate/boilerplate.yaml.txt paths={{.PATHS}} output:rbac:artifacts:config={{.OUTPUT}}'
+
   generate-deepcopy:
     internal: true
     deps: [controller-gen]
