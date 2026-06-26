@@ -27,6 +27,7 @@ tasks:
     desc: "Generate all CRD-related files (manifests + deepcopy methods)"
     deps: [tools:apigen]
     cmds:
+      - task: mockery
       - task: tools:generate-crds
         vars:
           PATH: /gateway/...
@@ -117,6 +118,10 @@ tasks:
       - task: lint
       - task: test
 
+  mockery:
+    deps: [tools:mockery]
+    cmds:
+      - "{{.BIN}}/mockery"
   proto:
     desc: "Generate protobuf files"
     cmds:
