@@ -83,6 +83,11 @@ linters:
           disabled: true
         - name: blank-imports
           disabled: true
+    govet:
+      enable:
+        - nilness # find tautologies / impossible conditions
+        - sortslice # check the argument type of sort.Slice
+        - unusedwrite # checks for unused writes
     paths:
       - third_party$
       - builtin$
