@@ -40,7 +40,7 @@ Providers:
 ## Project structure
 - `api/`: API definitions (CRDs)
 - `cmd/`: Command entry points
-- `internal/client/`: KCP client helpers
+- `internal/client/`: kcp client helpers
 - `internal/config/`: operator config
 - `internal/controller/`: kubernetes controllers
 - `internal/fga/`: tuples and storeID management for OpenFGA
@@ -51,7 +51,7 @@ Providers:
 - `internal/test/`: integration tests
 - `internal/webhook/`: validating webhook
 - `pkg/`: HTTP client configuration for OAuth dynamic client registration
-- `config/resources/`: KCP API resources
+- `config/resources/`: kcp API resources
 - `bin/`
 - `main.go`
 - `go.mod`
@@ -65,7 +65,7 @@ Providers:
 - `CODE_OF_CONDUCT.md`
 - `AGENTS.md`
 
-## KCP structure
+## kcp structure
 - root (workspace types, used by initializer, terminator)
     - orgs (store, IDP, account `orgA`)
         - orgA (invite, accountInfo for account `orgA`, account `accB`)

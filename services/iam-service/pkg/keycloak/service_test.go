@@ -485,7 +485,7 @@ func TestGetUsersByEmails_EmptySlice(t *testing.T) {
 }
 
 func TestGetUsersByEmails_NoKCPContext(t *testing.T) {
-	// Test missing KCP context
+	// Test missing kcp context
 	ctx := context.Background()
 	service := &Service{}
 
@@ -1041,7 +1041,7 @@ func TestGetUsers_Success(t *testing.T) {
 }
 
 func TestGetUsers_NoKCPContext(t *testing.T) {
-	// Test GetUsers without KCP context
+	// Test GetUsers without kcp context
 	ctx := context.Background()
 	service := &Service{}
 

@@ -177,11 +177,11 @@ func TestCheckToken_InvalidURL(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.False(t, result)
-	assert.Contains(t, err.Error(), "invalid KCP host URL")
+	assert.Contains(t, err.Error(), "invalid kcp host URL")
 }
 
 func TestCheckToken_ValidURL(t *testing.T) {
-	// Create a mock HTTP server to simulate KCP API
+	// Create a mock HTTP server to simulate kcp API
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check the request path and authorization
 		expectedPath := "/clusters/root:orgs:test-org/version"
@@ -558,7 +558,7 @@ func TestSetKCPUserContext_IDMTenantSuccess(t *testing.T) {
 	}
 	log, _ := logger.New(logger.Config{Level: "debug"})
 
-	// Create a mock KCP server
+	// Create a mock kcp server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Simulate successful auth check
 		w.WriteHeader(http.StatusOK)
@@ -574,7 +574,7 @@ func TestSetKCPUserContext_IDMTenantSuccess(t *testing.T) {
 	middleware := New(restConfig, excludedTenants, mockTenantRetriever, log)
 	middlewareFunc := middleware.SetKCPUserContext()
 
-	// Handler that checks if KCP context was set correctly
+	// Handler that checks if kcp context was set correctly
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		kcpCtx, err := appcontext.GetKCPContext(r.Context())
 		assert.NoError(t, err)
@@ -669,7 +669,7 @@ func TestSetKCPUserContext_TokenCheckFailure(t *testing.T) {
 	mockTenantRetriever := &mockIDMTenantRetriever{}
 	log, _ := logger.New(logger.Config{Level: "debug"})
 
-	// Create a mock KCP server that returns unauthorized
+	// Create a mock kcp server that returns unauthorized
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
@@ -746,7 +746,7 @@ func TestSetKCPUserContext_SubdomainPatterns(t *testing.T) {
 	mockTenantRetriever := &mockIDMTenantRetriever{}
 	log, _ := logger.New(logger.Config{Level: "debug"})
 
-	// Create a mock KCP server
+	// Create a mock kcp server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

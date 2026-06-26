@@ -28,7 +28,7 @@ import (
 )
 
 // NewForLogicalCluster returns a client for a given logical cluster name or
-// path, based on a KCP base config.
+// path, based on a kcp base config.
 func NewForLogicalCluster(config *rest.Config, scheme *runtime.Scheme, clusterKey logicalcluster.Name) (ctrlruntimeclient.Client, error) {
 	path := fmt.Sprintf("/clusters/%s", clusterKey)
 

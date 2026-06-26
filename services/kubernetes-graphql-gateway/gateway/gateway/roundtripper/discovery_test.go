@@ -35,13 +35,13 @@ func TestIsDiscoveryRequest(t *testing.T) {
 		{name: "api group", method: http.MethodGet, path: "/apis/apps", expected: true},
 		{name: "api group version", method: http.MethodGet, path: "/apis/apps/v1", expected: true},
 
-		// KCP paths: /services/{ws}/clusters/{cl}/...
+		// kcp paths: /services/{ws}/clusters/{cl}/...
 		{name: "kcp services api", method: http.MethodGet, path: "/services/ws/clusters/cl/api", expected: true},
 		{name: "kcp services api version", method: http.MethodGet, path: "/services/ws/clusters/cl/api/v1", expected: true},
 		{name: "kcp services apis group", method: http.MethodGet, path: "/services/ws/clusters/cl/apis/apps", expected: true},
 		{name: "kcp services apis group version", method: http.MethodGet, path: "/services/ws/clusters/cl/apis/apps/v1", expected: true},
 
-		// KCP paths: /clusters/{cl}/...
+		// kcp paths: /clusters/{cl}/...
 		{name: "kcp clusters api", method: http.MethodGet, path: "/clusters/cl/api", expected: true},
 		{name: "kcp clusters api version", method: http.MethodGet, path: "/clusters/cl/api/v1", expected: true},
 		{name: "kcp clusters apis group", method: http.MethodGet, path: "/clusters/cl/apis/apps", expected: true},

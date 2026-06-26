@@ -52,7 +52,7 @@ var modelGeneratorCmd = &cobra.Command{
 
 		restCfg, err := getKubeconfigFromPath(generatorCfg.KCP.Kubeconfig)
 		if err != nil {
-			log.Error().Err(err).Msg("unable to get KCP kubeconfig")
+			log.Error().Err(err).Msg("unable to get kcp kubeconfig")
 			return err
 		}
 

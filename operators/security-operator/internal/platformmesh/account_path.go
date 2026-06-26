@@ -33,7 +33,7 @@ const (
 )
 
 // IsPlatformMeshAccountPath returns whether a value is a platform-mesh account
-// path, i.e. a canonical KCP workspace path child to the platform-mesh account
+// path, i.e. a canonical kcp workspace path child to the platform-mesh account
 // workspace tree "root:orgs".
 func IsPlatformMeshAccountPath(value string) bool {
 	_, valid := logicalcluster.NewValidatedPath(value)

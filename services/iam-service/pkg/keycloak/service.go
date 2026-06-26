@@ -103,7 +103,7 @@ func (s *Service) UserByMail(ctx context.Context, userID string) (*graph.User, e
 	kctx, err := appcontext.GetKCPContext(ctx)
 	if err != nil {
 		metrics.KeycloakRequests.WithLabelValues("user_by_mail", "error").Inc()
-		return nil, errors.Wrap(err, "failed to get KCP user context")
+		return nil, errors.Wrap(err, "failed to get kcp user context")
 	}
 
 	realm := kctx.IDMTenant
@@ -142,7 +142,7 @@ func (s *Service) GetUsers(ctx context.Context) ([]*graph.User, error) {
 	kctx, err := appcontext.GetKCPContext(ctx)
 	if err != nil {
 		metrics.KeycloakRequests.WithLabelValues("get_users", "error").Inc()
-		return nil, errors.Wrap(err, "failed to get KCP user context")
+		return nil, errors.Wrap(err, "failed to get kcp user context")
 	}
 
 	realm := kctx.IDMTenant
@@ -231,7 +231,7 @@ func (s *Service) GetUsersByEmails(ctx context.Context, emails []string) (map[st
 	kctx, err := appcontext.GetKCPContext(ctx)
 	if err != nil {
 		metrics.KeycloakRequests.WithLabelValues("get_users_by_emails", "error").Inc()
-		return nil, errors.Wrap(err, "failed to get KCP user context")
+		return nil, errors.Wrap(err, "failed to get kcp user context")
 	}
 
 	realm := kctx.IDMTenant
