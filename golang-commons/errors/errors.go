@@ -53,7 +53,7 @@ func Sentinel(msg string, args ...any) error {
 // interpolating of message parameters. Use this when you want the stack trace to start at
 // the place you create the error.
 func New(msg string, args ...any) error {
-	return PopStack(errors.New(fmt.Sprintf(msg, args...)))
+	return PopStack(fmt.Errorf(msg, args...))
 }
 
 // EnsureStack checks if error has a stack, if not adds stack information, otherwise leaves the error unmodified.

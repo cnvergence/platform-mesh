@@ -74,6 +74,7 @@ linters:
           alias: ctrlruntimeclient
       no-unaliased: true
     revive:
+      enable-default-rules: true
       rules:
         - name: var-naming
           disabled: true
@@ -82,6 +83,10 @@ linters:
         - name: package-comments
           disabled: true
         - name: blank-imports
+          disabled: true
+        - name: unused-parameter
+          disabled: true
+        - name: unexported-return
           disabled: true
     govet:
       enable:
