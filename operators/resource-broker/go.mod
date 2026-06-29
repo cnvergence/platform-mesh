@@ -19,6 +19,8 @@ require (
 	sigs.k8s.io/multicluster-runtime v0.23.3
 )
 
+replace github.com/kcp-dev/multicluster-provider/client => github.com/kcp-dev/multicluster-provider/client v0.7.1
+
 require (
 	cel.dev/expr v0.25.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
