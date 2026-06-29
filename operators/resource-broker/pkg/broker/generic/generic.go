@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,26 +27,24 @@ import (
 
 	"github.com/go-logr/logr"
 
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/kubernetes"
+	"go.platform-mesh.io/resource-broker/pkg/sync"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
 	mchandler "sigs.k8s.io/multicluster-runtime/pkg/handler"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
-
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
-	"github.com/platform-mesh/resource-broker/pkg/kubernetes"
-	"github.com/platform-mesh/resource-broker/pkg/sync"
 )
 
 // ErrRequeueAfter can be returned by EnsureStagingCluster to signal that
@@ -65,12 +62,12 @@ const (
 // Options are the options for the generic reconciler.
 type Options struct {
 	ControllerNamePrefix      string
-	CoordinationClient        client.Client
+	CoordinationClient        ctrlruntimeclient.Client
 	GetProviderCluster        func(context.Context, multicluster.ClusterName) (cluster.Cluster, error)
 	GetConsumerCluster        func(context.Context, multicluster.ClusterName) (cluster.Cluster, error)
-	GetProviders              func(metav1.GroupVersionResource) map[string]map[string]brokerv1alpha1.AcceptAPI
-	GetProviderAcceptedAPIs   func(string, metav1.GroupVersionResource) ([]brokerv1alpha1.AcceptAPI, error)
-	GetMigrationConfiguration func(metav1.GroupVersionKind, metav1.GroupVersionKind) (brokerv1alpha1.MigrationConfiguration, bool)
+	GetProviders              func(metav1.GroupVersionResource) map[string]map[string]pmbrokerv1alpha1.AcceptAPI
+	GetProviderAcceptedAPIs   func(string, metav1.GroupVersionResource) ([]pmbrokerv1alpha1.AcceptAPI, error)
+	GetMigrationConfiguration func(metav1.GroupVersionKind, metav1.GroupVersionKind) (pmbrokerv1alpha1.MigrationConfiguration, bool)
 
 	// GetStagingCluster returns the staging cluster name for the given consumer
 	// cluster and GVR if a staging workspace already exists. Returns "", false, nil
@@ -129,8 +126,8 @@ func SetupController(mgr mctrl.Manager, gvk schema.GroupVersionKind, opts Option
 	// providerEventHandler maps events from provider resources back to the
 	// consumer resource that owns them. This enables status updates on the
 	// provider side to trigger reconciliation and sync status back to consumer.
-	providerEventHandler := mchandler.TypedEnqueueRequestsFromMapFunc[client.Object, mctrl.Request](
-		func(_ context.Context, obj client.Object) []mctrl.Request {
+	providerEventHandler := mchandler.TypedEnqueueRequestsFromMapFunc[ctrlruntimeclient.Object, mctrl.Request](
+		func(_ context.Context, obj ctrlruntimeclient.Object) []mctrl.Request {
 			annotations := obj.GetAnnotations()
 			if annotations == nil {
 				return nil
@@ -862,14 +859,14 @@ func (t *objectReconcileTask) runMigration(ctx context.Context, consumerObj *uns
 
 	// Copy related resources from new provider when cutover can start.
 	switch migrationState {
-	case brokerv1alpha1.MigrationStateInitialCompleted, brokerv1alpha1.MigrationStateCutoverInProgress, brokerv1alpha1.MigrationStateCutoverCompleted:
+	case pmbrokerv1alpha1.MigrationStateInitialCompleted, pmbrokerv1alpha1.MigrationStateCutoverInProgress, pmbrokerv1alpha1.MigrationStateCutoverCompleted:
 		t.log.Info("Syncing related resources from new provider")
 		if err := t.syncRelatedResources(ctx, t.newProviderName, t.newProviderCluster); err != nil {
 			return mctrl.Result{}, true, err
 		}
 	}
 
-	if migrationState != brokerv1alpha1.MigrationStateCutoverCompleted {
+	if migrationState != pmbrokerv1alpha1.MigrationStateCutoverCompleted {
 		// Migration still in progress: check new provider status before waiting.
 		status, found, err := t.getNewProviderStatus(ctx)
 		if err != nil {
@@ -913,7 +910,7 @@ func (t *objectReconcileTask) runMigration(ctx context.Context, consumerObj *uns
 
 // migrate handles migration of the resource from one provider to another.
 // The first boolean returns whether the reconciliation can continue.
-func (t *objectReconcileTask) migrate(ctx context.Context, consumerObj *unstructured.Unstructured) (bool, brokerv1alpha1.MigrationState, error) {
+func (t *objectReconcileTask) migrate(ctx context.Context, consumerObj *unstructured.Unstructured) (bool, pmbrokerv1alpha1.MigrationState, error) {
 	from := metav1.GroupVersionKind{
 		Group:   t.gvk.Group,
 		Version: t.gvk.Version,
@@ -927,10 +924,10 @@ func (t *objectReconcileTask) migrate(ctx context.Context, consumerObj *unstruct
 	migrationConfig, found := t.opts.GetMigrationConfiguration(from, to)
 	if !found {
 		t.log.Info("No migration configuration found, continuing", "from", from, "to", to)
-		return true, brokerv1alpha1.MigrationStateCutoverCompleted, nil
+		return true, pmbrokerv1alpha1.MigrationStateCutoverCompleted, nil
 	}
 
-	migration := &brokerv1alpha1.Migration{}
+	migration := &pmbrokerv1alpha1.Migration{}
 	err := t.opts.CoordinationClient.Get(
 		ctx,
 		types.NamespacedName{
@@ -941,7 +938,7 @@ func (t *objectReconcileTask) migrate(ctx context.Context, consumerObj *unstruct
 	)
 	if err != nil && !apierrors.IsNotFound(err) {
 		t.log.Error(err, "Failed to get Migration resource")
-		return false, brokerv1alpha1.MigrationStateUnknown, fmt.Errorf("failed to get Migration resource: %w", err)
+		return false, pmbrokerv1alpha1.MigrationStateUnknown, fmt.Errorf("failed to get Migration resource: %w", err)
 	}
 	if err == nil {
 		t.log.Info("Found existing Migration")
@@ -950,19 +947,19 @@ func (t *objectReconcileTask) migrate(ctx context.Context, consumerObj *unstruct
 
 	t.log.Info("No existing migration found, creating new migration")
 	providerNN := t.providerNamespacedName()
-	migration = &brokerv1alpha1.Migration{
+	migration = &pmbrokerv1alpha1.Migration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      consumerObj.GetName(),      // TODO unique name?
 			Namespace: consumerObj.GetNamespace(), // TODO predetermined namespace?
 		},
-		Spec: brokerv1alpha1.MigrationSpec{
-			From: brokerv1alpha1.MigrationRef{
+		Spec: pmbrokerv1alpha1.MigrationSpec{
+			From: pmbrokerv1alpha1.MigrationRef{
 				GVK:         migrationConfig.Spec.From,
 				Name:        providerNN.Name,
 				Namespace:   providerNN.Namespace,
 				ClusterName: t.providerName,
 			},
-			To: brokerv1alpha1.MigrationRef{
+			To: pmbrokerv1alpha1.MigrationRef{
 				GVK:         migrationConfig.Spec.To,
 				Name:        providerNN.Name,
 				Namespace:   providerNN.Namespace,
@@ -973,12 +970,12 @@ func (t *objectReconcileTask) migrate(ctx context.Context, consumerObj *unstruct
 
 	t.log.Info("Creating migration config in coordination cluster")
 	if err := t.opts.CoordinationClient.Create(ctx, migration); err != nil {
-		return false, brokerv1alpha1.MigrationStateUnknown, fmt.Errorf("failed to create Migration resource in coordination cluster: %w", err)
+		return false, pmbrokerv1alpha1.MigrationStateUnknown, fmt.Errorf("failed to create Migration resource in coordination cluster: %w", err)
 	}
 
 	// Created migration, wait for next reconciliation to continue.
 	// At this point the migration reconciler should take over.
-	return false, brokerv1alpha1.MigrationStateUnknown, nil
+	return false, pmbrokerv1alpha1.MigrationStateUnknown, nil
 }
 
 func (t *objectReconcileTask) decorateInProvider(ctx context.Context, providerName string, providerCluster cluster.Cluster) error {
@@ -1125,24 +1122,24 @@ func (t *objectReconcileTask) transformStatusRelatedResources(status any, prefix
 	return newStatus
 }
 
-func (t *objectReconcileTask) getProviderStatus(ctx context.Context) (brokerv1alpha1.Status, bool, error) {
+func (t *objectReconcileTask) getProviderStatus(ctx context.Context) (pmbrokerv1alpha1.Status, bool, error) {
 	providerObj, err := t.getProviderObj(ctx)
 	if err != nil {
-		return brokerv1alpha1.StatusUnknown, false, fmt.Errorf("failed to get resource from provider cluster %q: %w", t.providerName, err)
+		return pmbrokerv1alpha1.StatusUnknown, false, fmt.Errorf("failed to get resource from provider cluster %q: %w", t.providerName, err)
 	}
 
 	statusI, found, err := unstructured.NestedString(providerObj.Object, "status", "status")
-	return brokerv1alpha1.Status(statusI), found, err
+	return pmbrokerv1alpha1.Status(statusI), found, err
 }
 
-func (t *objectReconcileTask) getNewProviderStatus(ctx context.Context) (brokerv1alpha1.Status, bool, error) {
+func (t *objectReconcileTask) getNewProviderStatus(ctx context.Context) (pmbrokerv1alpha1.Status, bool, error) {
 	newProviderObj, err := t.getNewProviderObj(ctx)
 	if err != nil {
-		return brokerv1alpha1.StatusUnknown, false, fmt.Errorf("failed to get resource from new provider cluster %q: %w", t.newProviderName, err)
+		return pmbrokerv1alpha1.StatusUnknown, false, fmt.Errorf("failed to get resource from new provider cluster %q: %w", t.newProviderName, err)
 	}
 
 	statusI, found, err := unstructured.NestedString(newProviderObj.Object, "status", "status")
-	return brokerv1alpha1.Status(statusI), found, err
+	return pmbrokerv1alpha1.Status(statusI), found, err
 }
 
 func (t *objectReconcileTask) syncRelatedResources(ctx context.Context, providerName string, providerCluster cluster.Cluster) error {
@@ -1175,14 +1172,14 @@ func (t *objectReconcileTask) syncRelatedResources(ctx context.Context, provider
 	return errs
 }
 
-func (t *objectReconcileTask) syncRelatedResource(ctx context.Context, providerCluster cluster.Cluster, key string, relatedResource brokerv1alpha1.RelatedResource, consumerObj *unstructured.Unstructured) error {
+func (t *objectReconcileTask) syncRelatedResource(ctx context.Context, providerCluster cluster.Cluster, key string, relatedResource pmbrokerv1alpha1.RelatedResource, consumerObj *unstructured.Unstructured) error {
 	log := t.log.WithValues("relatedResourceKey", key)
 	log.Info("Syncing related resource", "relatedResource", relatedResource)
 	providerRRObj := &unstructured.Unstructured{}
 	providerRRObj.SetGroupVersionKind(relatedResource.SchemaGVK())
 	if err := providerCluster.GetClient().Get(
 		ctx,
-		client.ObjectKey{
+		ctrlruntimeclient.ObjectKey{
 			Namespace: relatedResource.Namespace,
 			Name:      relatedResource.Name,
 		},

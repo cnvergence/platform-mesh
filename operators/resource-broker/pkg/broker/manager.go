@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,10 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
-
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 )

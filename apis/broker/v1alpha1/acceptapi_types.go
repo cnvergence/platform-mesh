@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -203,8 +202,4 @@ type AcceptAPIList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AcceptAPI `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&AcceptAPI{}, &AcceptAPIList{})
 }

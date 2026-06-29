@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,9 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +kubebuilder:rbac:groups=example.platform-mesh.io,resources=vms,verbs=get;list;watch;create;update;patch;delete
@@ -58,7 +57,7 @@ type VMStatus struct {
 
 	// RelatedResources lists resources related to this VM.
 	// +optional
-	RelatedResources brokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
+	RelatedResources pmbrokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -88,8 +87,4 @@ type VMList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []VM `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&VM{}, &VMList{})
 }

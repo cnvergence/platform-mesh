@@ -2,7 +2,6 @@
 
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -46,10 +45,10 @@ import (
 	"sigs.k8s.io/multicluster-runtime/providers/multi"
 	"sigs.k8s.io/multicluster-runtime/providers/single"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
-	examplev1alpha1 "github.com/platform-mesh/resource-broker/api/example/v1alpha1"
-	"github.com/platform-mesh/resource-broker/test/e2e/internal/manager"
-	"github.com/platform-mesh/resource-broker/test/utils"
+	brokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	examplev1alpha1 "go.platform-mesh.io/resource-broker/api/example/v1alpha1"
+	"go.platform-mesh.io/resource-broker/test/e2e/internal/manager"
+	"go.platform-mesh.io/resource-broker/test/utils"
 )
 
 func init() {

@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,19 +20,18 @@ import (
 	"context"
 	"fmt"
 
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // CollectRelatedResources retrieves the related resources from the
 // status of a provider resource.
-func CollectRelatedResources(ctx context.Context, providerClient client.Client, gvk schema.GroupVersionKind, namespacedName types.NamespacedName) (map[string]brokerv1alpha1.RelatedResource, error) {
+func CollectRelatedResources(ctx context.Context, providerClient ctrlruntimeclient.Client, gvk schema.GroupVersionKind, namespacedName types.NamespacedName) (map[string]pmbrokerv1alpha1.RelatedResource, error) {
 	providerObj := &unstructured.Unstructured{}
 	providerObj.SetGroupVersionKind(gvk)
 	if err := providerClient.Get(ctx, namespacedName, providerObj); err != nil {
@@ -48,14 +46,14 @@ func CollectRelatedResources(ctx context.Context, providerClient client.Client, 
 		return nil, nil
 	}
 
-	relatedResources := make(map[string]brokerv1alpha1.RelatedResource, len(relatedResourcesI))
+	relatedResources := make(map[string]pmbrokerv1alpha1.RelatedResource, len(relatedResourcesI))
 	for key, rrI := range relatedResourcesI {
 		rrMap, ok := rrI.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("failed to cast related resource %q from synced resource status", key)
 		}
 
-		var rr brokerv1alpha1.RelatedResource
+		var rr pmbrokerv1alpha1.RelatedResource
 		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(rrMap, &rr); err != nil {
 			return nil, fmt.Errorf("failed to convert related resource %q from synced resource status: %w", key, err)
 		}

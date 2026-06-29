@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,9 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +kubebuilder:rbac:groups=networking.generic.platform-mesh.io,resources=virtualnetworks,verbs=get;list;watch;create;update;patch;delete
@@ -48,7 +47,7 @@ type VirtualNetworkStatus struct {
 
 	// RelatedResources lists resources related to this VirtualNetwork.
 	// +optional
-	RelatedResources brokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
+	RelatedResources pmbrokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -113,7 +112,7 @@ type PeeringStatus struct {
 
 	// RelatedResources lists resources related to this Peering.
 	// +optional
-	RelatedResources brokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
+	RelatedResources pmbrokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true

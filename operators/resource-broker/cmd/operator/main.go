@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,20 +22,18 @@ import (
 	"flag"
 	"os"
 
+	pmoperatorbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/operator"
+	"go.platform-mesh.io/resource-broker/pkg/version"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
-
-	operatorv1alpha1 "github.com/platform-mesh/resource-broker/api/operator/v1alpha1"
-	"github.com/platform-mesh/resource-broker/pkg/operator"
-	"github.com/platform-mesh/resource-broker/pkg/version"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -51,7 +48,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(operatorv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(pmoperatorbrokerv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

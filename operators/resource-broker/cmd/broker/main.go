@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,15 +23,13 @@ import (
 	"os"
 	"slices"
 
-	"k8s.io/client-go/tools/clientcmd"
+	"go.platform-mesh.io/resource-broker/pkg/broker"
+	"go.platform-mesh.io/resource-broker/pkg/version"
 
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
-
-	"github.com/platform-mesh/resource-broker/pkg/broker"
-	"github.com/platform-mesh/resource-broker/pkg/version"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.

@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,25 +26,23 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/kcp-dev/multicluster-provider/apiexport"
-	kcpcore "github.com/kcp-dev/sdk/apis/core"
-	corev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
+	"github.com/kcp-dev/multicluster-provider/apiexport"
+	kcpcore "github.com/kcp-dev/sdk/apis/core"
+	kcpcorev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
 )
 
 const (
@@ -62,7 +59,7 @@ type Options struct {
 	KcpConfig       *rest.Config
 	APIExportName   string
 	Scheme          *runtime.Scheme
-	SetAcceptAPI    func(metav1.GroupVersionResource, multicluster.ClusterName, brokerv1alpha1.AcceptAPI)
+	SetAcceptAPI    func(metav1.GroupVersionResource, multicluster.ClusterName, pmbrokerv1alpha1.AcceptAPI)
 	DeleteAcceptAPI func(metav1.GroupVersionResource, multicluster.ClusterName, string)
 }
 
@@ -103,7 +100,7 @@ func New(opts Options) (*Reconciler, error) {
 	r.opts = opts
 
 	r.coreScheme = runtime.NewScheme()
-	if err := corev1alpha1.AddToScheme(r.coreScheme); err != nil {
+	if err := kcpcorev1alpha1.AddToScheme(r.coreScheme); err != nil {
 		return nil, fmt.Errorf("unable to add core v1alpha1 to scheme: %w", err)
 	}
 
@@ -133,7 +130,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (mc
 		return mctrl.Result{}, err
 	}
 
-	acceptAPI := &brokerv1alpha1.AcceptAPI{}
+	acceptAPI := &pmbrokerv1alpha1.AcceptAPI{}
 	if err := cl.GetClient().Get(ctx, req.NamespacedName, acceptAPI); err != nil {
 		if apierrors.IsNotFound(err) {
 			return mctrl.Result{}, nil
@@ -198,13 +195,13 @@ func (r *Reconciler) lookupProviderPath(ctx context.Context, clusterID string) (
 		return "", fmt.Errorf("failed to build cluster config for %q: %w", clusterID, err)
 	}
 
-	cl, err := client.New(cfg, client.Options{Scheme: r.coreScheme})
+	cl, err := ctrlruntimeclient.New(cfg, ctrlruntimeclient.Options{Scheme: r.coreScheme})
 	if err != nil {
 		return "", fmt.Errorf("failed to create client for cluster %q: %w", clusterID, err)
 	}
 
-	lc := &corev1alpha1.LogicalCluster{}
-	if err := cl.Get(ctx, types.NamespacedName{Name: corev1alpha1.LogicalClusterName}, lc); err != nil {
+	lc := &kcpcorev1alpha1.LogicalCluster{}
+	if err := cl.Get(ctx, types.NamespacedName{Name: kcpcorev1alpha1.LogicalClusterName}, lc); err != nil {
 		return "", fmt.Errorf("failed to get LogicalCluster for cluster %q: %w", clusterID, err)
 	}
 
@@ -216,16 +213,16 @@ func (r *Reconciler) lookupProviderPath(ctx context.Context, clusterID string) (
 }
 
 // clusterDirectConfig derives a REST config that directly accesses the given
-// KCP logical cluster ID by replacing the cluster path segment in the base URL.
+// kcp logical cluster ID by replacing the cluster path segment in the base URL.
 func clusterDirectConfig(base *rest.Config, clusterID string) (*rest.Config, error) {
 	cfg := rest.CopyConfig(base)
 	u, err := url.Parse(cfg.Host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse KCP host URL %q: %w", cfg.Host, err)
+		return nil, fmt.Errorf("failed to parse kcp host URL %q: %w", cfg.Host, err)
 	}
 	idx := strings.Index(u.Path, "/clusters/")
 	if idx < 0 {
-		return nil, fmt.Errorf("KCP host URL %q does not contain /clusters/ path segment", cfg.Host)
+		return nil, fmt.Errorf("kcp host URL %q does not contain /clusters/ path segment", cfg.Host)
 	}
 	u.Path = u.Path[:idx] + "/clusters/" + clusterID
 	cfg.Host = u.String()

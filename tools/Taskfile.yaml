@@ -129,17 +129,25 @@ tasks:
   generate-crds:
     internal: true
     deps: [controller-gen]
+    vars:
+      # CRDs are usually generated based off the global apis module
+      BASEDIR: '{{ .BASEDIR | default (print .TOPLEVEL "/apis") }}'
     cmds:
-      - '{{.BIN}}/controller-gen rbac:roleName=manager-role crd:headerFile={{.HACK}}/boilerplate/boilerplate.yaml.txt paths={{.TOPLEVEL}}/apis{{.PATH}} output:crd:artifacts:config={{.OUTPUT}}'
+      - '{{.BIN}}/controller-gen crd:headerFile={{.HACK}}/boilerplate/boilerplate.yaml.txt paths={{.BASEDIR}}{{.PATH}} output:crd:artifacts:config={{.OUTPUT}}'
 
   generate-rbac:
     internal: true
     deps: [controller-gen]
+    vars:
+      ROLE: '{{ .ROLE | default "manager-role" }}'
     cmds:
-      - '{{.BIN}}/controller-gen rbac:roleName=manager-role,headerFile={{.HACK}}/boilerplate/boilerplate.yaml.txt paths={{.PATHS}} output:rbac:artifacts:config={{.OUTPUT}}'
+      - '{{.BIN}}/controller-gen rbac:roleName={{.ROLE}},headerFile={{.HACK}}/boilerplate/boilerplate.yaml.txt paths={{.PATHS}} output:rbac:artifacts:config={{.OUTPUT}}'
 
   generate-deepcopy:
     internal: true
     deps: [controller-gen]
+    vars:
+      # deepcopy funcs are usually generated based off the global apis module
+      BASEDIR: '{{ .BASEDIR | default (print .TOPLEVEL "/apis") }}'
     cmds:
-      - "{{.BIN}}/controller-gen object:headerFile={{.HACK}}/boilerplate/boilerplate.go.txt paths={{.TOPLEVEL}}/apis{{.PATH}}"
+      - "{{.BIN}}/controller-gen object:headerFile={{.HACK}}/boilerplate/boilerplate.go.txt paths={{.BASEDIR}}{{.PATH}}"

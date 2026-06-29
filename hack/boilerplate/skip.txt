@@ -11,6 +11,9 @@ verify_boilerplate.py
 # External tools and scripts
 hack/uget.sh
 
+# Examples
+operators/resource-broker/examples
+
 # Auto-generated files
 services/iam-service/pkg/graph/generated.go
 services/iam-service/pkg/graph/models_gen.go

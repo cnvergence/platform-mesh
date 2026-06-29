@@ -1,36 +1,36 @@
-// Copyright The Platform Mesh Authors.
-// SPDX-License-Identifier: Apache-2.0
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+Copyright The Platform Mesh Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package operator
 
 import (
 	"fmt"
 
+	pmoperatorbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/kubernetes"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	operatorv1alpha1 "github.com/platform-mesh/resource-broker/api/operator/v1alpha1"
-	"github.com/platform-mesh/resource-broker/pkg/kubernetes"
 )
 
 // updateDeployment updates a deployment based on the values in the broker spec.
-func updateDeployment(scheme *runtime.Scheme, broker *operatorv1alpha1.Broker, deployment *appsv1.Deployment) error {
+func updateDeployment(scheme *runtime.Scheme, broker *pmoperatorbrokerv1alpha1.Broker, deployment *appsv1.Deployment) error {
 	// labels
 	deployment.Labels = kubernetes.MergeMaps(deployment.Labels, broker.Spec.Labels)
 	deployment.Spec.Template.Labels = kubernetes.MergeMaps(deployment.Spec.Template.Labels, broker.Spec.Labels)
@@ -81,7 +81,7 @@ func updateDeployment(scheme *runtime.Scheme, broker *operatorv1alpha1.Broker, d
 	return controllerutil.SetControllerReference(broker, deployment, scheme)
 }
 
-func buildImageRef(imageSpec operatorv1alpha1.ImageSpec) string {
+func buildImageRef(imageSpec pmoperatorbrokerv1alpha1.ImageSpec) string {
 	repository := imageSpec.Repository
 	if repository == "" {
 		repository = "ghcr.io/platform-mesh/resource-broker"

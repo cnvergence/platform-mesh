@@ -1,6 +1,5 @@
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,21 +23,19 @@ import (
 
 	"github.com/go-logr/logr"
 
+	pmoperatorbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
-
-	operatorv1alpha1 "github.com/platform-mesh/resource-broker/api/operator/v1alpha1"
 )
 
 const (
@@ -54,7 +51,7 @@ const (
 func SetupBrokerController(mgr mctrl.Manager, opts BrokerOptions) error {
 	return mctrl.NewControllerManagedBy(mgr).
 		Named("broker-reconciler").
-		For(&operatorv1alpha1.Broker{}).
+		For(&pmoperatorbrokerv1alpha1.Broker{}).
 		Owns(&appsv1.Deployment{}).
 		Complete(opts)
 }
@@ -84,7 +81,7 @@ type brokerReconciler struct {
 	log  logr.Logger
 	req  mctrl.Request
 
-	client client.Client
+	client ctrlruntimeclient.Client
 }
 
 func (r *brokerReconciler) reconcile(ctx context.Context) (mctrl.Result, error) {
@@ -97,7 +94,7 @@ func (r *brokerReconciler) reconcile(ctx context.Context) (mctrl.Result, error) 
 
 	r.client = cl.GetClient()
 
-	broker := &operatorv1alpha1.Broker{}
+	broker := &pmoperatorbrokerv1alpha1.Broker{}
 	if err := r.client.Get(ctx, r.req.NamespacedName, broker); err != nil {
 		if apierrors.IsNotFound(err) {
 			return mctrl.Result{}, nil
@@ -138,7 +135,7 @@ func (r *brokerReconciler) reconcile(ctx context.Context) (mctrl.Result, error) 
 	return mctrl.Result{}, nil
 }
 
-func updateBrokerStatus(broker *operatorv1alpha1.Broker, deployment *appsv1.Deployment) {
+func updateBrokerStatus(broker *pmoperatorbrokerv1alpha1.Broker, deployment *appsv1.Deployment) {
 	expectedReplicas := int32(1)
 	if broker.Spec.Replicas != nil {
 		expectedReplicas = *broker.Spec.Replicas
