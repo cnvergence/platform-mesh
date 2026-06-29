@@ -88,7 +88,7 @@ const (
 
 // Options configures the staging workspace reconciler.
 type Options struct {
-	// TreeRootConfig is the REST config for the KCP tree-root workspace under
+	// TreeRootConfig is the REST config for the kcp tree-root workspace under
 	// which staging workspaces are created (e.g. root:rb).
 	TreeRootConfig *rest.Config
 
@@ -114,15 +114,15 @@ func (o *Options) validate() error {
 	return nil
 }
 
-// Reconciler manages the lifecycle of staging KCP workspaces.
+// Reconciler manages the lifecycle of staging kcp workspaces.
 type Reconciler struct {
 	ctrlruntimeclient.Client
 	opts Options
 
-	// treeRootScheme is a scheme that knows about KCP tenancy, APIs, and RBAC types.
+	// treeRootScheme is a scheme that knows about kcp tenancy, APIs, and RBAC types.
 	treeRootScheme *runtime.Scheme
 	// brokerUser is the CN of the certificate used by the broker to authenticate
-	// against KCP. It is granted access to bound resources in each staging workspace.
+	// against kcp. It is granted access to bound resources in each staging workspace.
 	brokerUser string
 
 	// treeRootClient is a cached client for the tree-root workspace (constant config).
@@ -474,7 +474,7 @@ func (r *Reconciler) ensureAPIBinding(ctx context.Context, sw *pmbrokerv1alpha1.
 }
 
 // finalize removes the staging cluster from the Output provider and deletes
-// the KCP workspace before clearing the finalizer.
+// the kcp workspace before clearing the finalizer.
 func (r *Reconciler) finalize(ctx context.Context, sw *pmbrokerv1alpha1.StagingWorkspace) error {
 	log := ctrllog.FromContext(ctx).WithValues("stagingWorkspace", sw.Name)
 
@@ -484,17 +484,17 @@ func (r *Reconciler) finalize(ctx context.Context, sw *pmbrokerv1alpha1.StagingW
 		log.Info("Removed staging cluster from output provider", "clusterName", stagingClusterName)
 	}
 
-	// Delete the KCP workspace (ignore NotFound in case it was already deleted).
+	// Delete the kcp workspace (ignore NotFound in case it was already deleted).
 	workspace := &kcptenancyv1alpha1.Workspace{}
 	if err := r.treeRootClient.Get(ctx, types.NamespacedName{Name: sw.Name}, workspace); err != nil {
 		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to get KCP workspace during finalization: %w", err)
+			return fmt.Errorf("failed to get kcp workspace during finalization: %w", err)
 		}
 	} else if workspace.DeletionTimestamp.IsZero() {
 		if err := r.treeRootClient.Delete(ctx, workspace); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete KCP workspace: %w", err)
+			return fmt.Errorf("failed to delete kcp workspace: %w", err)
 		}
-		log.Info("Deleted KCP workspace", "name", sw.Name)
+		log.Info("Deleted kcp workspace", "name", sw.Name)
 	}
 
 	if controllerutil.RemoveFinalizer(sw, stagingWorkspaceFinalizer) {
@@ -547,7 +547,7 @@ func (r *Reconciler) providerPermissionClaims(
 	return claims, nil
 }
 
-// clusterHost builds a direct KCP URL for the given workspace path by replacing
+// clusterHost builds a direct kcp URL for the given workspace path by replacing
 // the /clusters/... suffix in baseHost with /clusters/<path>.
 func clusterHost(baseHost, clusterPath string) (string, error) {
 	u, err := url.Parse(baseHost)
@@ -564,7 +564,7 @@ func clusterHost(baseHost, clusterPath string) (string, error) {
 
 // ensureBrokerRBAC creates a ClusterRole and ClusterRoleBinding in the staging
 // workspace so that the broker user (r.brokerUser) can read/write the resources
-// that were bound via the APIBinding. KCP does not automatically grant bound-resource
+// that were bound via the APIBinding. kcp does not automatically grant bound-resource
 // access to workspace admins, so we create explicit RBAC.
 func (r *Reconciler) ensureBrokerRBAC(
 	ctx context.Context,
@@ -636,7 +636,7 @@ func (r *Reconciler) cachedClient(host string) (ctrlruntimeclient.Client, error)
 
 // substituteClusterPath builds a workspace URL that uses the same base host
 // (scheme, host, port) as baseHost but with the /clusters/<path> suffix taken
-// from workspaceURL. This is needed because KCP's Workspace.Spec.URL may point
+// from workspaceURL. This is needed because kcp's Workspace.Spec.URL may point
 // to a different server endpoint (e.g. front-proxy) than the kubeconfig URL.
 func substituteClusterPath(baseHost, workspaceURL string) (string, error) {
 	base, err := url.Parse(baseHost)

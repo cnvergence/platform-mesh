@@ -755,11 +755,11 @@ func treeRootConfig(kcpConfig *rest.Config, workspaceTreeRoot string) (*rest.Con
 	cfg := rest.CopyConfig(kcpConfig)
 	u, err := url.Parse(cfg.Host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse KCP host URL %q: %w", cfg.Host, err)
+		return nil, fmt.Errorf("failed to parse kcp host URL %q: %w", cfg.Host, err)
 	}
 	idx := strings.Index(u.Path, "/clusters/")
 	if idx < 0 {
-		return nil, fmt.Errorf("KCP host URL %q does not contain /clusters/ path segment", cfg.Host)
+		return nil, fmt.Errorf("kcp host URL %q does not contain /clusters/ path segment", cfg.Host)
 	}
 	u.Path = u.Path[:idx] + "/clusters/" + workspaceTreeRoot
 	cfg.Host = u.String()
@@ -784,7 +784,7 @@ func stagingClusterName(consumerCluster, providerCluster, apiExportName string) 
 }
 
 // labelSafeClusterName converts a cluster name to a Kubernetes-label-safe form
-// by replacing '#' with '.'. KCP cluster IDs are lowercase hex (no '.'), so
+// by replacing '#' with '.'. kcp cluster IDs are lowercase hex (no '.'), so
 // the conversion is reversible via strings.ReplaceAll(s, ".", "#").
 func labelSafeClusterName(name string) string {
 	return strings.ReplaceAll(name, "#", ".")

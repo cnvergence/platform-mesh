@@ -213,16 +213,16 @@ func (r *Reconciler) lookupProviderPath(ctx context.Context, clusterID string) (
 }
 
 // clusterDirectConfig derives a REST config that directly accesses the given
-// KCP logical cluster ID by replacing the cluster path segment in the base URL.
+// kcp logical cluster ID by replacing the cluster path segment in the base URL.
 func clusterDirectConfig(base *rest.Config, clusterID string) (*rest.Config, error) {
 	cfg := rest.CopyConfig(base)
 	u, err := url.Parse(cfg.Host)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse KCP host URL %q: %w", cfg.Host, err)
+		return nil, fmt.Errorf("failed to parse kcp host URL %q: %w", cfg.Host, err)
 	}
 	idx := strings.Index(u.Path, "/clusters/")
 	if idx < 0 {
-		return nil, fmt.Errorf("KCP host URL %q does not contain /clusters/ path segment", cfg.Host)
+		return nil, fmt.Errorf("kcp host URL %q does not contain /clusters/ path segment", cfg.Host)
 	}
 	u.Path = u.Path[:idx] + "/clusters/" + clusterID
 	cfg.Host = u.String()
