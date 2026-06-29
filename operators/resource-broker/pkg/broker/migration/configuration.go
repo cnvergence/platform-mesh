@@ -19,7 +19,7 @@ package migration
 import (
 	"context"
 
-	pmbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

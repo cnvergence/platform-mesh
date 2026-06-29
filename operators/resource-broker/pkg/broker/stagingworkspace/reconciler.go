@@ -39,7 +39,7 @@ import (
 	"sync"
 	"time"
 
-	pmbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

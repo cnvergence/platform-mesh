@@ -25,7 +25,7 @@ import (
 
 	"github.com/google/cel-go/cel"
 
-	pmbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 	"go.platform-mesh.io/resource-broker/pkg/sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

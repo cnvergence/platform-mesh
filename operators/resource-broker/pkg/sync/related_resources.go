@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	pmbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"

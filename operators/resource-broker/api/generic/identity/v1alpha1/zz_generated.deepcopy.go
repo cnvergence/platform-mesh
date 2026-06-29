@@ -5,7 +5,7 @@
 package v1alpha1
 
 import (
-	brokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )

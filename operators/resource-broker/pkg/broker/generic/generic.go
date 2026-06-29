@@ -27,7 +27,7 @@ import (
 
 	"github.com/go-logr/logr"
 
-	pmbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 	"go.platform-mesh.io/resource-broker/pkg/kubernetes"
 	"go.platform-mesh.io/resource-broker/pkg/sync"
 

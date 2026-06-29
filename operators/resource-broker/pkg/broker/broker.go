@@ -28,7 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/sync/errgroup"
 
-	pmbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 	"go.platform-mesh.io/resource-broker/pkg/broker/acceptapi"
 	genericreconciler "go.platform-mesh.io/resource-broker/pkg/broker/generic"
 	"go.platform-mesh.io/resource-broker/pkg/broker/migration"
