@@ -1,6 +1,6 @@
 module go.platform-mesh.io/search-service
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/go-chi/chi/v5 v5.3.0
@@ -11,8 +11,8 @@ require (
 	go.platform-mesh.io/apis v0.0.3
 	go.platform-mesh.io/golang-commons v0.18.1
 	google.golang.org/grpc v1.81.1
-	k8s.io/apimachinery v0.35.4
-	k8s.io/client-go v0.35.4
+	k8s.io/apimachinery v0.36.0
+	k8s.io/client-go v0.36.0
 )
 
 require (
