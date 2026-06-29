@@ -1,0 +1,86 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: resource-broker
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - broker.platform-mesh.io
+  resources:
+  - acceptapis
+  - migrationconfigurations
+  verbs:
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - broker.platform-mesh.io
+  resources:
+  - acceptapis/finalizers
+  - migrationconfigurations/finalizers
+  - migrations/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - broker.platform-mesh.io
+  resources:
+  - acceptapis/status
+  - migrationconfigurations/status
+  verbs:
+  - get
+- apiGroups:
+  - broker.platform-mesh.io
+  resources:
+  - migrations
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - broker.platform-mesh.io
+  resources:
+  - migrations/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
