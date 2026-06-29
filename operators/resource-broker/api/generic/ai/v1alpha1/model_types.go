@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
+	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 )
 
 // +kubebuilder:rbac:groups=ai.generic.platform-mesh.io,resources=hostedmodels,verbs=get;list;watch;create;update;patch;delete

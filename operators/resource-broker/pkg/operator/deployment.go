@@ -26,8 +26,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	operatorv1alpha1 "github.com/platform-mesh/resource-broker/api/operator/v1alpha1"
-	"github.com/platform-mesh/resource-broker/pkg/kubernetes"
+	operatorv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/kubernetes"
 )
 
 // updateDeployment updates a deployment based on the values in the broker spec.

@@ -44,9 +44,9 @@ import (
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
-	"github.com/platform-mesh/resource-broker/pkg/kubernetes"
-	"github.com/platform-mesh/resource-broker/pkg/sync"
+	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/kubernetes"
+	"go.platform-mesh.io/resource-broker/pkg/sync"
 )
 
 // ErrRequeueAfter can be returned by EnsureStagingCluster to signal that

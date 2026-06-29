@@ -44,7 +44,7 @@ import (
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
+	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 )
 
 const (

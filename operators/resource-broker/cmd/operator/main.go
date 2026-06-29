@@ -33,9 +33,9 @@ import (
 
 	mctrl "sigs.k8s.io/multicluster-runtime"
 
-	operatorv1alpha1 "github.com/platform-mesh/resource-broker/api/operator/v1alpha1"
-	"github.com/platform-mesh/resource-broker/pkg/operator"
-	"github.com/platform-mesh/resource-broker/pkg/version"
+	operatorv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/operator"
+	"go.platform-mesh.io/resource-broker/pkg/version"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.

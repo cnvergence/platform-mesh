@@ -37,7 +37,7 @@ import (
 	mctrl "sigs.k8s.io/multicluster-runtime"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 
-	operatorv1alpha1 "github.com/platform-mesh/resource-broker/api/operator/v1alpha1"
+	operatorv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
 )
 
 const (

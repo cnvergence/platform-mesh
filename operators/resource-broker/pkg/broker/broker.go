@@ -50,11 +50,11 @@ import (
 	"sigs.k8s.io/multicluster-runtime/providers/multi"
 	"sigs.k8s.io/multicluster-runtime/providers/single"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
-	"github.com/platform-mesh/resource-broker/pkg/broker/acceptapi"
-	genericreconciler "github.com/platform-mesh/resource-broker/pkg/broker/generic"
-	"github.com/platform-mesh/resource-broker/pkg/broker/migration"
-	"github.com/platform-mesh/resource-broker/pkg/broker/stagingworkspace"
+	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/broker/acceptapi"
+	genericreconciler "go.platform-mesh.io/resource-broker/pkg/broker/generic"
+	"go.platform-mesh.io/resource-broker/pkg/broker/migration"
+	"go.platform-mesh.io/resource-broker/pkg/broker/stagingworkspace"
 )
 
 const (

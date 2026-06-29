@@ -27,7 +27,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
+	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 )
 
 // CollectRelatedResources retrieves the related resources from the

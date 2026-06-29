@@ -45,10 +45,10 @@ import (
 	"sigs.k8s.io/multicluster-runtime/providers/multi"
 	"sigs.k8s.io/multicluster-runtime/providers/single"
 
-	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
-	examplev1alpha1 "github.com/platform-mesh/resource-broker/api/example/v1alpha1"
-	"github.com/platform-mesh/resource-broker/test/e2e/internal/manager"
-	"github.com/platform-mesh/resource-broker/test/utils"
+	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	examplev1alpha1 "go.platform-mesh.io/apis/example/v1alpha1"
+	"go.platform-mesh.io/resource-broker/test/e2e/internal/manager"
+	"go.platform-mesh.io/resource-broker/test/utils"
 )
 
 func init() {
