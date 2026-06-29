@@ -2,7 +2,6 @@
 
 /*
 Copyright The Platform Mesh Authors.
-SPDX-License-Identifier: Apache-2.0
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,8 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	brokerv1alpha1 "github.com/platform-mesh/resource-broker/api/broker/v1alpha1"
-	"github.com/platform-mesh/resource-broker/test/e2e/internal/manager"
 	"github.com/platform-mesh/resource-broker/pkg/broker/generic"
+	"github.com/platform-mesh/resource-broker/test/e2e/internal/manager"
 )
 
 // TestManagerCopy only tests that the manager can copy from a source to
