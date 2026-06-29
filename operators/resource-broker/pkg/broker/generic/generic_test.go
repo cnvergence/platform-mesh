@@ -22,9 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"k8s.io/apimachinery/pkg/types"
-
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
 )
 

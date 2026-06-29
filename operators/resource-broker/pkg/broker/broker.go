@@ -26,11 +26,13 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
-	"github.com/kcp-dev/multicluster-provider/apiexport"
-	kcpapisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
-	kcpapisv1alpha2 "github.com/kcp-dev/sdk/apis/apis/v1alpha2"
-	kcpcore "github.com/kcp-dev/sdk/apis/core"
 	"golang.org/x/sync/errgroup"
+
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/broker/acceptapi"
+	genericreconciler "go.platform-mesh.io/resource-broker/pkg/broker/generic"
+	"go.platform-mesh.io/resource-broker/pkg/broker/migration"
+	"go.platform-mesh.io/resource-broker/pkg/broker/stagingworkspace"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,11 +40,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
 	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
@@ -50,11 +50,10 @@ import (
 	"sigs.k8s.io/multicluster-runtime/providers/multi"
 	"sigs.k8s.io/multicluster-runtime/providers/single"
 
-	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
-	"go.platform-mesh.io/resource-broker/pkg/broker/acceptapi"
-	genericreconciler "go.platform-mesh.io/resource-broker/pkg/broker/generic"
-	"go.platform-mesh.io/resource-broker/pkg/broker/migration"
-	"go.platform-mesh.io/resource-broker/pkg/broker/stagingworkspace"
+	"github.com/kcp-dev/multicluster-provider/apiexport"
+	kcpapisv1alpha1 "github.com/kcp-dev/sdk/apis/apis/v1alpha1"
+	kcpapisv1alpha2 "github.com/kcp-dev/sdk/apis/apis/v1alpha2"
+	kcpcore "github.com/kcp-dev/sdk/apis/core"
 )
 
 const (
@@ -137,16 +136,16 @@ type Broker struct {
 
 	// apiAccepters maps GVRs to provider cluster names to AcceptAPIs.
 	// GVR -> providerClusterName -> acceptAPI.Name -> AcceptAPI
-	apiAccepters map[metav1.GroupVersionResource]map[string]map[string]brokerv1alpha1.AcceptAPI
+	apiAccepters map[metav1.GroupVersionResource]map[string]map[string]pmbrokerv1alpha1.AcceptAPI
 
 	// migrationConfigurations maps source GVKs to target GVKs.
-	migrationConfigurations map[metav1.GroupVersionKind]map[metav1.GroupVersionKind]brokerv1alpha1.MigrationConfiguration
+	migrationConfigurations map[metav1.GroupVersionKind]map[metav1.GroupVersionKind]pmbrokerv1alpha1.MigrationConfiguration
 
 	// stagingToProvider maps staging cluster names to provider cluster names.
 	stagingToProvider map[string]string
 
 	// localClient is used to read/write StagingWorkspace CRs in the local cluster.
-	localClient client.Client
+	localClient ctrlruntimeclient.Client
 
 	// multiProvider is the multi-cluster provider that aggregates consumer and
 	// staging provider clusters.
@@ -168,9 +167,9 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 	/////////////////////////////////////////////////////////////////////////////
 	// AcceptAPI Controller
 
-	b.apiAccepters = make(map[metav1.GroupVersionResource]map[string]map[string]brokerv1alpha1.AcceptAPI)
+	b.apiAccepters = make(map[metav1.GroupVersionResource]map[string]map[string]pmbrokerv1alpha1.AcceptAPI)
 	acceptAPIScheme := runtime.NewScheme()
-	if err := brokerv1alpha1.AddToScheme(acceptAPIScheme); err != nil {
+	if err := pmbrokerv1alpha1.AddToScheme(acceptAPIScheme); err != nil {
 		return nil, fmt.Errorf("unable to add broker v1alpha1 to acceptapi scheme: %w", err)
 	}
 	if err := kcpapisv1alpha1.AddToScheme(acceptAPIScheme); err != nil {
@@ -187,16 +186,16 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 		KcpConfig:     opts.KcpConfig,
 		APIExportName: opts.AcceptAPIName,
 		Scheme:        acceptAPIScheme,
-		SetAcceptAPI: func(gvr metav1.GroupVersionResource, cn multicluster.ClusterName, acceptAPI brokerv1alpha1.AcceptAPI) {
+		SetAcceptAPI: func(gvr metav1.GroupVersionResource, cn multicluster.ClusterName, acceptAPI pmbrokerv1alpha1.AcceptAPI) {
 			clusterName := ProviderPrefix + "#" + string(cn)
 			b.opts.Log.Info("SetAcceptAPI", "gvr", gvr, "cluster", clusterName, "acceptAPI", acceptAPI.Name)
 			b.lock.Lock()
 			defer b.lock.Unlock()
 			if _, ok := b.apiAccepters[gvr]; !ok {
-				b.apiAccepters[gvr] = make(map[string]map[string]brokerv1alpha1.AcceptAPI)
+				b.apiAccepters[gvr] = make(map[string]map[string]pmbrokerv1alpha1.AcceptAPI)
 			}
 			if _, ok := b.apiAccepters[gvr][clusterName]; !ok {
-				b.apiAccepters[gvr][clusterName] = make(map[string]brokerv1alpha1.AcceptAPI)
+				b.apiAccepters[gvr][clusterName] = make(map[string]pmbrokerv1alpha1.AcceptAPI)
 			}
 			b.apiAccepters[gvr][clusterName][acceptAPI.Name] = acceptAPI
 		},
@@ -224,7 +223,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 	}
 	if err := mcbuilder.ControllerManagedBy(kcpAcceptAPIMgr).
 		Named(b.opts.Name + "-kcp-acceptapi").
-		For(&brokerv1alpha1.AcceptAPI{}).
+		For(&pmbrokerv1alpha1.AcceptAPI{}).
 		Complete(kcpAcceptAPI); err != nil {
 		return nil, fmt.Errorf("failed to create acceptapi reconciler: %w", err)
 	}
@@ -233,12 +232,12 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 	/////////////////////////////////////////////////////////////////////////////
 	// Migration Controllers
 
-	b.migrationConfigurations = make(map[metav1.GroupVersionKind]map[metav1.GroupVersionKind]brokerv1alpha1.MigrationConfiguration)
+	b.migrationConfigurations = make(map[metav1.GroupVersionKind]map[metav1.GroupVersionKind]pmbrokerv1alpha1.MigrationConfiguration)
 	migrationScheme := runtime.NewScheme()
-	if err := brokerv1alpha1.AddToScheme(migrationScheme); err != nil {
+	if err := pmbrokerv1alpha1.AddToScheme(migrationScheme); err != nil {
 		return nil, fmt.Errorf("unable to add broker v1alpha1 to migration scheme: %w", err)
 	}
-	migrationClient, err := client.New(opts.MigrationCoordination, client.Options{
+	migrationClient, err := ctrlruntimeclient.New(opts.MigrationCoordination, ctrlruntimeclient.Options{
 		Scheme: migrationScheme,
 	})
 	if err != nil {
@@ -264,11 +263,11 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 	migrationConfigOptions := migration.ConfigurationOptions{
 		GetCluster:           migrationMgr.GetCluster,
 		ControllerNamePrefix: b.opts.Name,
-		SetMigrationConfiguration: func(from metav1.GroupVersionKind, to metav1.GroupVersionKind, config brokerv1alpha1.MigrationConfiguration) {
+		SetMigrationConfiguration: func(from metav1.GroupVersionKind, to metav1.GroupVersionKind, config pmbrokerv1alpha1.MigrationConfiguration) {
 			b.lock.Lock()
 			defer b.lock.Unlock()
 			if _, ok := b.migrationConfigurations[from]; !ok {
-				b.migrationConfigurations[from] = make(map[metav1.GroupVersionKind]brokerv1alpha1.MigrationConfiguration)
+				b.migrationConfigurations[from] = make(map[metav1.GroupVersionKind]pmbrokerv1alpha1.MigrationConfiguration)
 			}
 			b.migrationConfigurations[from][to] = config
 		},
@@ -285,7 +284,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 		return nil, fmt.Errorf("failed to create migration reconciler: %w", err)
 	}
 
-	computeClient, err := client.New(b.opts.ComputeConfig, client.Options{
+	computeClient, err := ctrlruntimeclient.New(b.opts.ComputeConfig, ctrlruntimeclient.Options{
 		Scheme: runtime.NewScheme(),
 	})
 	if err != nil {
@@ -301,12 +300,12 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 			}
 			return b.multiProvider.Get(ctx, clusterName)
 		},
-		GetMigrationConfiguration: func(fromGVK metav1.GroupVersionKind, toGVK metav1.GroupVersionKind) (brokerv1alpha1.MigrationConfiguration, bool) {
+		GetMigrationConfiguration: func(fromGVK metav1.GroupVersionKind, toGVK metav1.GroupVersionKind) (pmbrokerv1alpha1.MigrationConfiguration, bool) {
 			b.lock.RLock()
 			defer b.lock.RUnlock()
 			toMap, ok := b.migrationConfigurations[fromGVK]
 			if !ok {
-				return brokerv1alpha1.MigrationConfiguration{}, false
+				return pmbrokerv1alpha1.MigrationConfiguration{}, false
 			}
 			v, ok := toMap[toGVK]
 			return v, ok
@@ -320,7 +319,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 	// Staging Workspace Reconciler + General Manager
 
 	generalScheme := runtime.NewScheme()
-	if err := brokerv1alpha1.AddToScheme(generalScheme); err != nil {
+	if err := pmbrokerv1alpha1.AddToScheme(generalScheme); err != nil {
 		return nil, fmt.Errorf("unable to add broker v1alpha1 to general scheme: %w", err)
 	}
 
@@ -378,7 +377,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 	// the map survives operator restarts (EnsureStagingCluster is the only other
 	// writer, so the map is empty until each workspace is re-encountered).
 	if err := generalMgr.GetLocalManager().Add(manager.RunnableFunc(func(ctx context.Context) error {
-		swList := &brokerv1alpha1.StagingWorkspaceList{}
+		swList := &pmbrokerv1alpha1.StagingWorkspaceList{}
 		if err := b.localClient.List(ctx, swList); err != nil {
 			return fmt.Errorf("failed to list StagingWorkspaces on startup: %w", err)
 		}
@@ -418,18 +417,18 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 			}
 			return b.multiProvider.Get(ctx, clusterName)
 		},
-		GetProviders: func(gvr metav1.GroupVersionResource) map[string]map[string]brokerv1alpha1.AcceptAPI {
+		GetProviders: func(gvr metav1.GroupVersionResource) map[string]map[string]pmbrokerv1alpha1.AcceptAPI {
 			b.lock.RLock()
 			defer b.lock.RUnlock()
-			ret := make(map[string]map[string]brokerv1alpha1.AcceptAPI, len(b.apiAccepters[gvr]))
+			ret := make(map[string]map[string]pmbrokerv1alpha1.AcceptAPI, len(b.apiAccepters[gvr]))
 			for providerClusterName, acceptors := range b.apiAccepters[gvr] {
-				cloned := make(map[string]brokerv1alpha1.AcceptAPI, len(acceptors))
+				cloned := make(map[string]pmbrokerv1alpha1.AcceptAPI, len(acceptors))
 				maps.Copy(cloned, acceptors)
 				ret[providerClusterName] = cloned
 			}
 			return ret
 		},
-		GetProviderAcceptedAPIs: func(providerOrStagingName string, gvr metav1.GroupVersionResource) ([]brokerv1alpha1.AcceptAPI, error) {
+		GetProviderAcceptedAPIs: func(providerOrStagingName string, gvr metav1.GroupVersionResource) ([]pmbrokerv1alpha1.AcceptAPI, error) {
 			b.lock.RLock()
 			defer b.lock.RUnlock()
 			if acceptAPIs, ok := b.apiAccepters[gvr][providerOrStagingName]; ok {
@@ -443,12 +442,12 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 			}
 			return nil, nil
 		},
-		GetMigrationConfiguration: func(fromGVK metav1.GroupVersionKind, toGVK metav1.GroupVersionKind) (brokerv1alpha1.MigrationConfiguration, bool) {
+		GetMigrationConfiguration: func(fromGVK metav1.GroupVersionKind, toGVK metav1.GroupVersionKind) (pmbrokerv1alpha1.MigrationConfiguration, bool) {
 			b.lock.RLock()
 			defer b.lock.RUnlock()
 			toMap, ok := b.migrationConfigurations[fromGVK]
 			if !ok {
-				return brokerv1alpha1.MigrationConfiguration{}, false
+				return pmbrokerv1alpha1.MigrationConfiguration{}, false
 			}
 			v, ok := toMap[toGVK]
 			return v, ok
@@ -456,8 +455,8 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 
 		// Staging workspace callbacks — these replace annotation-based routing.
 		GetStagingCluster: func(ctx context.Context, consumerCluster string, gvr metav1.GroupVersionResource) (string, bool, error) {
-			swList := &brokerv1alpha1.StagingWorkspaceList{}
-			if err := b.localClient.List(ctx, swList, client.MatchingLabels{
+			swList := &pmbrokerv1alpha1.StagingWorkspaceList{}
+			if err := b.localClient.List(ctx, swList, ctrlruntimeclient.MatchingLabels{
 				stagingConsumerClusterLabel: labelSafeClusterName(consumerCluster),
 			}); err != nil {
 				return "", false, err
@@ -471,7 +470,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 			for i := range swList.Items {
 				sw := &swList.Items[i]
 				// Skip workspaces being torn down — no new CRs should be routed there.
-				if sw.Status.Phase == brokerv1alpha1.StagingWorkspacePhaseTerminating ||
+				if sw.Status.Phase == pmbrokerv1alpha1.StagingWorkspacePhaseTerminating ||
 					!sw.DeletionTimestamp.IsZero() {
 					continue
 				}
@@ -519,7 +518,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 			}
 
 			// Pick the first AcceptAPI to retrieve provider path and export name.
-			var acceptAPI brokerv1alpha1.AcceptAPI
+			var acceptAPI pmbrokerv1alpha1.AcceptAPI
 			for _, a := range acceptAPIs {
 				acceptAPI = a
 				break
@@ -536,7 +535,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 			swName := stagingWorkspaceName(consumerCluster, providerClusterName, apiExportName)
 			clusterName := stagingClusterName(consumerCluster, providerClusterName, apiExportName)
 
-			sw := &brokerv1alpha1.StagingWorkspace{}
+			sw := &pmbrokerv1alpha1.StagingWorkspace{}
 			err := b.localClient.Get(ctx, types.NamespacedName{Name: swName}, sw)
 			if apierrors.IsNotFound(err) {
 				// Before creating the new staging workspace, record the pending
@@ -546,8 +545,8 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 				// while EnsureStagingCluster is still returning ErrRequeueAfter).
 				// Note: clusterName already includes the "provider#" prefix.
 				newClusterFullName := clusterName
-				existingList := &brokerv1alpha1.StagingWorkspaceList{}
-				if lerr := b.localClient.List(ctx, existingList, client.MatchingLabels{
+				existingList := &pmbrokerv1alpha1.StagingWorkspaceList{}
+				if lerr := b.localClient.List(ctx, existingList, ctrlruntimeclient.MatchingLabels{
 					stagingConsumerClusterLabel: labelSafeClusterName(consumerCluster),
 				}); lerr == nil {
 					for i := range existingList.Items {
@@ -567,7 +566,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 					}
 				}
 
-				sw = &brokerv1alpha1.StagingWorkspace{
+				sw = &pmbrokerv1alpha1.StagingWorkspace{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: swName,
 						Labels: map[string]string{
@@ -577,7 +576,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 							stagingworkspace.StagingClusterLabelKey: clusterNameToStagingLabel(clusterName),
 						},
 					},
-					Spec: brokerv1alpha1.StagingWorkspaceSpec{
+					Spec: pmbrokerv1alpha1.StagingWorkspaceSpec{
 						ConsumerCluster:   consumerCluster,
 						ProviderPath:      providerPath,
 						APIExportName:     apiExportName,
@@ -593,7 +592,7 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 				return "", err
 			}
 
-			if sw.Status.Phase != brokerv1alpha1.StagingWorkspacePhaseReady {
+			if sw.Status.Phase != pmbrokerv1alpha1.StagingWorkspacePhaseReady {
 				return "", fmt.Errorf("staging workspace %q not yet ready (phase: %s): %w", swName, sw.Status.Phase, genericreconciler.ErrRequeueAfter)
 			}
 
@@ -610,8 +609,8 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 		},
 
 		GetActiveMigration: func(ctx context.Context, consumerCluster, currentProviderCluster string) (string, string, bool, error) {
-			swList := &brokerv1alpha1.StagingWorkspaceList{}
-			if err := b.localClient.List(ctx, swList, client.MatchingLabels{
+			swList := &pmbrokerv1alpha1.StagingWorkspaceList{}
+			if err := b.localClient.List(ctx, swList, ctrlruntimeclient.MatchingLabels{
 				stagingConsumerClusterLabel: labelSafeClusterName(consumerCluster),
 			}); err != nil {
 				return "", "", false, err
@@ -633,8 +632,8 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 		},
 
 		SetNewStagingCluster: func(ctx context.Context, currentStagingCluster, newStagingCluster string) error {
-			swList := &brokerv1alpha1.StagingWorkspaceList{}
-			if err := b.localClient.List(ctx, swList, client.MatchingLabels{
+			swList := &pmbrokerv1alpha1.StagingWorkspaceList{}
+			if err := b.localClient.List(ctx, swList, ctrlruntimeclient.MatchingLabels{
 				stagingworkspace.StagingClusterLabelKey: clusterNameToStagingLabel(currentStagingCluster),
 			}); err != nil {
 				return err
@@ -651,8 +650,8 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 		},
 
 		ClearNewStagingCluster: func(ctx context.Context, oldStagingCluster string) error {
-			swList := &brokerv1alpha1.StagingWorkspaceList{}
-			if err := b.localClient.List(ctx, swList, client.MatchingLabels{
+			swList := &pmbrokerv1alpha1.StagingWorkspaceList{}
+			if err := b.localClient.List(ctx, swList, ctrlruntimeclient.MatchingLabels{
 				stagingworkspace.StagingClusterLabelKey: clusterNameToStagingLabel(oldStagingCluster),
 			}); err != nil {
 				return err
@@ -669,8 +668,8 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 		},
 
 		TrackResourceInStagingWorkspace: func(ctx context.Context, stagingCluster, namespace, name string) error {
-			swList := &brokerv1alpha1.StagingWorkspaceList{}
-			if err := b.localClient.List(ctx, swList, client.MatchingLabels{
+			swList := &pmbrokerv1alpha1.StagingWorkspaceList{}
+			if err := b.localClient.List(ctx, swList, ctrlruntimeclient.MatchingLabels{
 				stagingworkspace.StagingClusterLabelKey: clusterNameToStagingLabel(stagingCluster),
 			}); err != nil {
 				return err
@@ -699,8 +698,8 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 		},
 
 		UntrackResourceFromStagingWorkspace: func(ctx context.Context, stagingCluster, namespace, name string) error {
-			swList := &brokerv1alpha1.StagingWorkspaceList{}
-			if err := b.localClient.List(ctx, swList, client.MatchingLabels{
+			swList := &pmbrokerv1alpha1.StagingWorkspaceList{}
+			if err := b.localClient.List(ctx, swList, ctrlruntimeclient.MatchingLabels{
 				stagingworkspace.StagingClusterLabelKey: clusterNameToStagingLabel(stagingCluster),
 			}); err != nil {
 				return err
@@ -717,8 +716,8 @@ func New(opts Options) (*Broker, error) { //nolint:gocyclo
 		},
 
 		GetConsumerFromStagingCluster: func(ctx context.Context, stagingCluster string) (string, error) {
-			swList := &brokerv1alpha1.StagingWorkspaceList{}
-			if err := b.localClient.List(ctx, swList, client.MatchingLabels{
+			swList := &pmbrokerv1alpha1.StagingWorkspaceList{}
+			if err := b.localClient.List(ctx, swList, ctrlruntimeclient.MatchingLabels{
 				stagingworkspace.StagingClusterLabelKey: clusterNameToStagingLabel(stagingCluster),
 			}); err != nil {
 				return "", err

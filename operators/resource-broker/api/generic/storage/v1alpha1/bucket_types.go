@@ -17,9 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
-	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +kubebuilder:rbac:groups=storage.generic.platform-mesh.io,resources=objects,verbs=get;list;watch;create;update;patch;delete
@@ -47,7 +47,7 @@ type ObjectStatus struct {
 
 	// RelatedResources lists resources related to this Object.
 	// +optional
-	RelatedResources brokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
+	RelatedResources pmbrokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -104,7 +104,7 @@ type BlockStatus struct {
 
 	// RelatedResources lists resources related to this Block.
 	// +optional
-	RelatedResources brokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
+	RelatedResources pmbrokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -161,7 +161,7 @@ type FileStatus struct {
 
 	// RelatedResources lists resources related to this File.
 	// +optional
-	RelatedResources brokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
+	RelatedResources pmbrokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true

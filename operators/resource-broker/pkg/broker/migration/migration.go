@@ -25,22 +25,20 @@ import (
 
 	"github.com/google/cel-go/cel"
 
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/sync"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-
 	ctrl "sigs.k8s.io/controller-runtime"
-	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
-
-	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
-	"go.platform-mesh.io/resource-broker/pkg/sync"
 )
 
 const (
@@ -49,12 +47,12 @@ const (
 )
 
 // MigrationOptions holds the options for the migration reconciler.
-type MigrationOptions struct { //nolint:revive
+type MigrationOptions struct {
 	ControllerNamePrefix      string
-	Compute                   ctrlclient.Client
+	Compute                   ctrlruntimeclient.Client
 	GetCoordinationCluster    func(context.Context, multicluster.ClusterName) (ctrlcluster.Cluster, error)
 	GetProviderCluster        func(context.Context, multicluster.ClusterName) (ctrlcluster.Cluster, error)
-	GetMigrationConfiguration func(metav1.GroupVersionKind, metav1.GroupVersionKind) (brokerv1alpha1.MigrationConfiguration, bool)
+	GetMigrationConfiguration func(metav1.GroupVersionKind, metav1.GroupVersionKind) (pmbrokerv1alpha1.MigrationConfiguration, bool)
 }
 
 type migrationReconciler struct {
@@ -69,7 +67,7 @@ func SetupController(mgr mctrl.Manager, opts MigrationOptions) error {
 
 	return mctrl.NewControllerManagedBy(mgr).
 		Named(opts.ControllerNamePrefix + "-migration").
-		For(&brokerv1alpha1.Migration{}).
+		For(&pmbrokerv1alpha1.Migration{}).
 		Complete(r)
 }
 
@@ -96,18 +94,18 @@ func (mr *migrationReconciler) Reconcile(ctx context.Context, req mctrl.Request)
 	log.Info("Migration found")
 
 	switch migration.Status.State {
-	case brokerv1alpha1.MigrationStateUnknown:
+	case pmbrokerv1alpha1.MigrationStateUnknown:
 		log.Info("Setting migration state to Pending")
 		// Not using the updateStatus helper, the migration was just
 		// retrieved and the .ID in status needs to be set.
 		migration.Status.ID = strings.ToLower(rand.Text())
-		migration.Status.State = brokerv1alpha1.MigrationStatePending
+		migration.Status.State = pmbrokerv1alpha1.MigrationStatePending
 		if err := cluster.GetClient().Status().Update(ctx, migration); err != nil {
 			log.Error(err, "Failed to update migration status")
 			return ctrl.Result{}, err
 		}
 
-	case brokerv1alpha1.MigrationStateCutoverCompleted:
+	case pmbrokerv1alpha1.MigrationStateCutoverCompleted:
 		log.Info("Migration already completed, skipping")
 		return ctrl.Result{}, nil
 	}
@@ -130,8 +128,8 @@ func (mr *migrationReconciler) Reconcile(ctx context.Context, req mctrl.Request)
 
 	if len(migrationConfig.Spec.Stages) == 0 {
 		log.Info("Migration configuration has no stages defined, marking migration as completed")
-		return mctrl.Result{}, mr.updateStatus(ctx, req.NamespacedName, cluster, func(migration *brokerv1alpha1.Migration) {
-			migration.Status.State = brokerv1alpha1.MigrationStateCutoverCompleted
+		return mctrl.Result{}, mr.updateStatus(ctx, req.NamespacedName, cluster, func(migration *pmbrokerv1alpha1.Migration) {
+			migration.Status.State = pmbrokerv1alpha1.MigrationStateCutoverCompleted
 		})
 	}
 
@@ -160,9 +158,9 @@ func (mr *migrationReconciler) Reconcile(ctx context.Context, req mctrl.Request)
 
 	// Set next state if pending, otherwise there is not transition out
 	// of the initial state.
-	if migration.Status.State == brokerv1alpha1.MigrationStatePending {
-		if err := mr.updateStatus(ctx, req.NamespacedName, cluster, func(migration *brokerv1alpha1.Migration) {
-			migration.Status.State = brokerv1alpha1.MigrationStateInitialInProgress
+	if migration.Status.State == pmbrokerv1alpha1.MigrationStatePending {
+		if err := mr.updateStatus(ctx, req.NamespacedName, cluster, func(migration *pmbrokerv1alpha1.Migration) {
+			migration.Status.State = pmbrokerv1alpha1.MigrationStateInitialInProgress
 		}); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -190,19 +188,19 @@ func (mr *migrationReconciler) Reconcile(ctx context.Context, req mctrl.Request)
 
 	if stageIndex+1 >= len(migrationConfig.Spec.Stages) {
 		log.Info("All migration stages completed, marking migration as completed")
-		return ctrl.Result{}, mr.updateStatus(ctx, req.NamespacedName, cluster, func(migration *brokerv1alpha1.Migration) {
-			migration.Status.State = brokerv1alpha1.MigrationStateCutoverCompleted
+		return ctrl.Result{}, mr.updateStatus(ctx, req.NamespacedName, cluster, func(migration *pmbrokerv1alpha1.Migration) {
+			migration.Status.State = pmbrokerv1alpha1.MigrationStateCutoverCompleted
 		})
 	}
 
 	if curStage.Progress {
 		log.Info("Progressing migration state to next phase")
-		if err := mr.updateStatus(ctx, req.NamespacedName, cluster, func(migration *brokerv1alpha1.Migration) {
+		if err := mr.updateStatus(ctx, req.NamespacedName, cluster, func(migration *pmbrokerv1alpha1.Migration) {
 			switch migration.Status.State {
-			case brokerv1alpha1.MigrationStateInitialInProgress:
-				migration.Status.State = brokerv1alpha1.MigrationStateInitialCompleted
-			case brokerv1alpha1.MigrationStateCutoverInProgress:
-				migration.Status.State = brokerv1alpha1.MigrationStateCutoverCompleted
+			case pmbrokerv1alpha1.MigrationStateInitialInProgress:
+				migration.Status.State = pmbrokerv1alpha1.MigrationStateInitialCompleted
+			case pmbrokerv1alpha1.MigrationStateCutoverInProgress:
+				migration.Status.State = pmbrokerv1alpha1.MigrationStateCutoverCompleted
 			}
 		}); err != nil {
 			return ctrl.Result{}, err
@@ -213,8 +211,8 @@ func (mr *migrationReconciler) Reconcile(ctx context.Context, req mctrl.Request)
 	return ctrl.Result{Requeue: true}, nil
 }
 
-func (mr *migrationReconciler) getMigration(ctx context.Context, nn types.NamespacedName, cluster ctrlcluster.Cluster) (*brokerv1alpha1.Migration, error) {
-	migration := &brokerv1alpha1.Migration{}
+func (mr *migrationReconciler) getMigration(ctx context.Context, nn types.NamespacedName, cluster ctrlcluster.Cluster) (*pmbrokerv1alpha1.Migration, error) {
+	migration := &pmbrokerv1alpha1.Migration{}
 	if err := cluster.GetClient().Get(ctx, nn, migration); err != nil {
 		ctrllog.FromContext(ctx).Error(err, "Failed to get migration")
 		return nil, err
@@ -222,7 +220,7 @@ func (mr *migrationReconciler) getMigration(ctx context.Context, nn types.Namesp
 	return migration, nil
 }
 
-func (mr *migrationReconciler) updateStatus(ctx context.Context, nn types.NamespacedName, cl ctrlcluster.Cluster, updateFunc func(*brokerv1alpha1.Migration)) error {
+func (mr *migrationReconciler) updateStatus(ctx context.Context, nn types.NamespacedName, cl ctrlcluster.Cluster, updateFunc func(*pmbrokerv1alpha1.Migration)) error {
 	migration, err := mr.getMigration(ctx, nn, cl)
 	if err != nil {
 		return err
@@ -237,7 +235,7 @@ func (mr *migrationReconciler) updateStatus(ctx context.Context, nn types.Namesp
 	return nil
 }
 
-func (mr *migrationReconciler) copyRelatedResources(ctx context.Context, from brokerv1alpha1.MigrationRef, prefix string) error {
+func (mr *migrationReconciler) copyRelatedResources(ctx context.Context, from pmbrokerv1alpha1.MigrationRef, prefix string) error {
 	cl, err := mr.opts.GetProviderCluster(ctx, multicluster.ClusterName(from.ClusterName))
 	if err != nil {
 		return err
@@ -274,7 +272,7 @@ func (mr *migrationReconciler) copyRelatedResources(ctx context.Context, from br
 	return errs
 }
 
-func (mr *migrationReconciler) copyRelatedResource(ctx context.Context, source ctrlcluster.Cluster, prefix string, relatedResource brokerv1alpha1.RelatedResource) error {
+func (mr *migrationReconciler) copyRelatedResource(ctx context.Context, source ctrlcluster.Cluster, prefix string, relatedResource pmbrokerv1alpha1.RelatedResource) error {
 	log := ctrllog.FromContext(ctx).WithValues(
 		"relatedResourceNamespace", relatedResource.Namespace,
 		"relatedResourceName", relatedResource.Name,
@@ -308,7 +306,7 @@ func (mr *migrationReconciler) copyRelatedResource(ctx context.Context, source c
 	existingObj.SetGroupVersionKind(targetObj.GroupVersionKind())
 	err := mr.opts.Compute.Get(
 		ctx,
-		ctrlclient.ObjectKeyFromObject(targetObj),
+		ctrlruntimeclient.ObjectKeyFromObject(targetObj),
 		existingObj,
 	)
 	if err != nil {
@@ -332,7 +330,7 @@ func (mr *migrationReconciler) copyRelatedResource(ctx context.Context, source c
 	return nil
 }
 
-func (mr *migrationReconciler) deployStage(ctx context.Context, migrationID string, stage brokerv1alpha1.MigrationStage) (map[string]*unstructured.Unstructured, error) {
+func (mr *migrationReconciler) deployStage(ctx context.Context, migrationID string, stage pmbrokerv1alpha1.MigrationStage) (map[string]*unstructured.Unstructured, error) {
 	var ret = make(map[string]*unstructured.Unstructured)
 	var errs error
 

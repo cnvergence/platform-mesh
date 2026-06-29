@@ -19,19 +19,18 @@ package operator
 import (
 	"fmt"
 
+	pmoperatorbrokerv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
+	"go.platform-mesh.io/resource-broker/pkg/kubernetes"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	operatorv1alpha1 "go.platform-mesh.io/apis/operatorbroker/v1alpha1"
-	"go.platform-mesh.io/resource-broker/pkg/kubernetes"
 )
 
 // updateDeployment updates a deployment based on the values in the broker spec.
-func updateDeployment(scheme *runtime.Scheme, broker *operatorv1alpha1.Broker, deployment *appsv1.Deployment) error {
+func updateDeployment(scheme *runtime.Scheme, broker *pmoperatorbrokerv1alpha1.Broker, deployment *appsv1.Deployment) error {
 	// labels
 	deployment.Labels = kubernetes.MergeMaps(deployment.Labels, broker.Spec.Labels)
 	deployment.Spec.Template.Labels = kubernetes.MergeMaps(deployment.Spec.Template.Labels, broker.Spec.Labels)
@@ -82,7 +81,7 @@ func updateDeployment(scheme *runtime.Scheme, broker *operatorv1alpha1.Broker, d
 	return controllerutil.SetControllerReference(broker, deployment, scheme)
 }
 
-func buildImageRef(imageSpec operatorv1alpha1.ImageSpec) string {
+func buildImageRef(imageSpec pmoperatorbrokerv1alpha1.ImageSpec) string {
 	repository := imageSpec.Repository
 	if repository == "" {
 		repository = "ghcr.io/platform-mesh/resource-broker"

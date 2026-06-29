@@ -19,17 +19,15 @@ package migration
 import (
 	"context"
 
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	ctrlutil "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-
 	mctrl "sigs.k8s.io/multicluster-runtime"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
-
-	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 )
 
 const migrationConfigurationFinalizer = "broker.platform-mesh.io/migrationconfiguration-finalizer"
@@ -39,7 +37,7 @@ const migrationConfigurationFinalizer = "broker.platform-mesh.io/migrationconfig
 type ConfigurationOptions struct {
 	ControllerNamePrefix         string
 	GetCluster                   func(context.Context, multicluster.ClusterName) (cluster.Cluster, error)
-	SetMigrationConfiguration    func(from metav1.GroupVersionKind, to metav1.GroupVersionKind, config brokerv1alpha1.MigrationConfiguration)
+	SetMigrationConfiguration    func(from metav1.GroupVersionKind, to metav1.GroupVersionKind, config pmbrokerv1alpha1.MigrationConfiguration)
 	DeleteMigrationConfiguration func(from metav1.GroupVersionKind, to metav1.GroupVersionKind)
 }
 
@@ -55,7 +53,7 @@ func SetupConfigurationController(mgr mctrl.Manager, opts ConfigurationOptions) 
 
 	return mctrl.NewControllerManagedBy(mgr).
 		Named(opts.ControllerNamePrefix + "-migration-configuration").
-		For(&brokerv1alpha1.MigrationConfiguration{}).
+		For(&pmbrokerv1alpha1.MigrationConfiguration{}).
 		Complete(r)
 }
 
@@ -75,7 +73,7 @@ func (cr *configurationReconciler) Reconcile(ctx context.Context, req mctrl.Requ
 		return mctrl.Result{}, err
 	}
 
-	migrationConfiguration := &brokerv1alpha1.MigrationConfiguration{}
+	migrationConfiguration := &pmbrokerv1alpha1.MigrationConfiguration{}
 	if err := cl.GetClient().Get(ctx, req.NamespacedName, migrationConfiguration); err != nil {
 		if apierrors.IsNotFound(err) {
 			return mctrl.Result{}, nil

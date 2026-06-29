@@ -23,15 +23,13 @@ import (
 	"os"
 	"slices"
 
-	"k8s.io/client-go/tools/clientcmd"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	mctrl "sigs.k8s.io/multicluster-runtime"
-
 	"go.platform-mesh.io/resource-broker/pkg/broker"
 	"go.platform-mesh.io/resource-broker/pkg/version"
+
+	"k8s.io/client-go/tools/clientcmd"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	mctrl "sigs.k8s.io/multicluster-runtime"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.

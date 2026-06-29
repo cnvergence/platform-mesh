@@ -39,9 +39,7 @@ import (
 	"sync"
 	"time"
 
-	kcpapisv1alpha2 "github.com/kcp-dev/sdk/apis/apis/v1alpha2"
-	corev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
-	kcptenancyv1alpha1 "github.com/kcp-dev/sdk/apis/tenancy/v1alpha1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -49,18 +47,18 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 	"sigs.k8s.io/multicluster-runtime/providers/clusters"
 
-	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	kcpapisv1alpha2 "github.com/kcp-dev/sdk/apis/apis/v1alpha2"
+	kcpcorev1alpha1 "github.com/kcp-dev/sdk/apis/core/v1alpha1"
+	kcptenancyv1alpha1 "github.com/kcp-dev/sdk/apis/tenancy/v1alpha1"
 )
 
 const (
@@ -118,7 +116,7 @@ func (o *Options) validate() error {
 
 // Reconciler manages the lifecycle of staging KCP workspaces.
 type Reconciler struct {
-	client.Client
+	ctrlruntimeclient.Client
 	opts Options
 
 	// treeRootScheme is a scheme that knows about KCP tenancy, APIs, and RBAC types.
@@ -128,12 +126,12 @@ type Reconciler struct {
 	brokerUser string
 
 	// treeRootClient is a cached client for the tree-root workspace (constant config).
-	treeRootClient client.Client
+	treeRootClient ctrlruntimeclient.Client
 
 	// clientCacheMu guards clientCache.
 	clientCacheMu sync.Mutex
 	// clientCache caches per-host clients (staging and provider workspaces).
-	clientCache map[string]client.Client
+	clientCache map[string]ctrlruntimeclient.Client
 }
 
 // New creates a new staging workspace reconciler.
@@ -158,7 +156,7 @@ func New(opts Options) (*Reconciler, error) {
 		return nil, fmt.Errorf("unable to add rbac v1 to scheme: %w", err)
 	}
 
-	treeRootClient, err := client.New(opts.TreeRootConfig, client.Options{Scheme: treeRootScheme})
+	treeRootClient, err := ctrlruntimeclient.New(opts.TreeRootConfig, ctrlruntimeclient.Options{Scheme: treeRootScheme})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tree-root client: %w", err)
 	}
@@ -168,7 +166,7 @@ func New(opts Options) (*Reconciler, error) {
 		treeRootScheme: treeRootScheme,
 		brokerUser:     brokerUser,
 		treeRootClient: treeRootClient,
-		clientCache:    make(map[string]client.Client),
+		clientCache:    make(map[string]ctrlruntimeclient.Client),
 	}, nil
 }
 
@@ -203,14 +201,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	if err := ctrl.NewControllerManagedBy(mgr).
 		Named("staging-workspace").
-		For(&brokerv1alpha1.StagingWorkspace{}).
+		For(&pmbrokerv1alpha1.StagingWorkspace{}).
 		Complete(reconcile.Func(r.reconcileWorkspace)); err != nil {
 		return err
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("staging-apibinding").
-		For(&brokerv1alpha1.StagingWorkspace{}).
+		For(&pmbrokerv1alpha1.StagingWorkspace{}).
 		Complete(reconcile.Func(r.reconcileAPIBinding))
 }
 
@@ -219,7 +217,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *Reconciler) reconcileWorkspace(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithValues("stagingWorkspace", req.NamespacedName)
 
-	sw := &brokerv1alpha1.StagingWorkspace{}
+	sw := &pmbrokerv1alpha1.StagingWorkspace{}
 	if err := r.Get(ctx, req.NamespacedName, sw); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -241,7 +239,7 @@ func (r *Reconciler) reconcileWorkspace(ctx context.Context, req ctrl.Request) (
 	// set) and all resource finalizers have since been removed, the broker is
 	// done with it. First move to Terminating so the broker stops routing new
 	// CRs here, then on the next reconcile trigger the actual deletion.
-	if sw.Status.Phase == brokerv1alpha1.StagingWorkspacePhaseReady &&
+	if sw.Status.Phase == pmbrokerv1alpha1.StagingWorkspacePhaseReady &&
 		sw.Annotations[ResourceTrackedAnnotation] == "true" {
 		hasResourceFinalizer := false
 		for _, f := range sw.Finalizers {
@@ -252,7 +250,7 @@ func (r *Reconciler) reconcileWorkspace(ctx context.Context, req ctrl.Request) (
 		}
 		if !hasResourceFinalizer {
 			log.Info("No resource finalizers remain, marking staging workspace as Terminating", "stagingWorkspace", sw.Name)
-			sw.Status.Phase = brokerv1alpha1.StagingWorkspacePhaseTerminating
+			sw.Status.Phase = pmbrokerv1alpha1.StagingWorkspacePhaseTerminating
 			if err := r.Client.Status().Update(ctx, sw); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -261,7 +259,7 @@ func (r *Reconciler) reconcileWorkspace(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Perform actual deletion once Terminating phase is set.
-	if sw.Status.Phase == brokerv1alpha1.StagingWorkspacePhaseTerminating {
+	if sw.Status.Phase == pmbrokerv1alpha1.StagingWorkspacePhaseTerminating {
 		log.Info("Deleting staging workspace in Terminating phase", "stagingWorkspace", sw.Name)
 		if err := r.Delete(ctx, sw); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("failed to delete terminating staging workspace: %w", err)
@@ -272,7 +270,7 @@ func (r *Reconciler) reconcileWorkspace(ctx context.Context, req ctrl.Request) (
 	result, err := r.ensureWorkspace(ctx, sw)
 	if err != nil {
 		log.Error(err, "Failed to ensure staging workspace")
-		sw.Status.Phase = brokerv1alpha1.StagingWorkspacePhaseFailed
+		sw.Status.Phase = pmbrokerv1alpha1.StagingWorkspacePhaseFailed
 		_ = r.Client.Status().Update(ctx, sw)
 	}
 	return result, err
@@ -283,7 +281,7 @@ func (r *Reconciler) reconcileWorkspace(ctx context.Context, req ctrl.Request) (
 func (r *Reconciler) reconcileAPIBinding(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx).WithValues("stagingWorkspace", req.NamespacedName)
 
-	sw := &brokerv1alpha1.StagingWorkspace{}
+	sw := &pmbrokerv1alpha1.StagingWorkspace{}
 	if err := r.Get(ctx, req.NamespacedName, sw); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -294,7 +292,7 @@ func (r *Reconciler) reconcileAPIBinding(ctx context.Context, req ctrl.Request) 
 	if sw.DeletionTimestamp != nil || sw.Status.WorkspaceURL == "" {
 		return ctrl.Result{}, nil
 	}
-	if sw.Status.Phase == brokerv1alpha1.StagingWorkspacePhaseReady {
+	if sw.Status.Phase == pmbrokerv1alpha1.StagingWorkspacePhaseReady {
 		// After a broker restart the in-memory Output provider is empty even
 		// though the StagingWorkspace is already Ready. Re-register the cluster
 		// if it is missing so that the broker can route traffic again.
@@ -311,7 +309,7 @@ func (r *Reconciler) reconcileAPIBinding(ctx context.Context, req ctrl.Request) 
 	result, err := r.ensureAPIBinding(ctx, sw)
 	if err != nil {
 		log.Error(err, "Failed to ensure APIBinding in staging workspace")
-		sw.Status.Phase = brokerv1alpha1.StagingWorkspacePhaseFailed
+		sw.Status.Phase = pmbrokerv1alpha1.StagingWorkspacePhaseFailed
 		_ = r.Client.Status().Update(ctx, sw)
 	}
 	return result, err
@@ -319,7 +317,7 @@ func (r *Reconciler) reconcileAPIBinding(ctx context.Context, req ctrl.Request) 
 
 // ensureWorkspace creates the kcp Workspace and waits for it to be ready.
 // Once ready, it writes Status.WorkspaceURL to signal the APIBinding reconciler.
-func (r *Reconciler) ensureWorkspace(ctx context.Context, sw *brokerv1alpha1.StagingWorkspace) (ctrl.Result, error) {
+func (r *Reconciler) ensureWorkspace(ctx context.Context, sw *pmbrokerv1alpha1.StagingWorkspace) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 
 	// Step 1: Ensure the kcp Workspace exists.
@@ -347,7 +345,7 @@ func (r *Reconciler) ensureWorkspace(ctx context.Context, sw *brokerv1alpha1.Sta
 		log.Info("kcp workspace is terminating, waiting for deletion", "name", sw.Name)
 		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
-	if workspace.Status.Phase != corev1alpha1.LogicalClusterPhaseReady {
+	if workspace.Status.Phase != kcpcorev1alpha1.LogicalClusterPhaseReady {
 		log.Info("Waiting for kcp workspace to be ready",
 			"name", sw.Name,
 			"phase", workspace.Status.Phase,
@@ -374,7 +372,7 @@ func (r *Reconciler) ensureWorkspace(ctx context.Context, sw *brokerv1alpha1.Sta
 
 // ensureAPIBinding creates the APIBinding in the staging workspace, waits for
 // it to be bound, ensures broker RBAC, and registers the cluster in Output.
-func (r *Reconciler) ensureAPIBinding(ctx context.Context, sw *brokerv1alpha1.StagingWorkspace) (ctrl.Result, error) {
+func (r *Reconciler) ensureAPIBinding(ctx context.Context, sw *pmbrokerv1alpha1.StagingWorkspace) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 
 	// Build a client pointing directly at the staging workspace.
@@ -467,7 +465,7 @@ func (r *Reconciler) ensureAPIBinding(ctx context.Context, sw *brokerv1alpha1.St
 	}
 
 	// Mark the StagingWorkspace as fully ready.
-	sw.Status.Phase = brokerv1alpha1.StagingWorkspacePhaseReady
+	sw.Status.Phase = pmbrokerv1alpha1.StagingWorkspacePhaseReady
 	if err := r.Client.Status().Update(ctx, sw); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -477,7 +475,7 @@ func (r *Reconciler) ensureAPIBinding(ctx context.Context, sw *brokerv1alpha1.St
 
 // finalize removes the staging cluster from the Output provider and deletes
 // the KCP workspace before clearing the finalizer.
-func (r *Reconciler) finalize(ctx context.Context, sw *brokerv1alpha1.StagingWorkspace) error {
+func (r *Reconciler) finalize(ctx context.Context, sw *pmbrokerv1alpha1.StagingWorkspace) error {
 	log := ctrllog.FromContext(ctx).WithValues("stagingWorkspace", sw.Name)
 
 	stagingClusterName := sw.Labels[StagingClusterLabelKey]
@@ -570,7 +568,7 @@ func clusterHost(baseHost, clusterPath string) (string, error) {
 // access to workspace admins, so we create explicit RBAC.
 func (r *Reconciler) ensureBrokerRBAC(
 	ctx context.Context,
-	stagingClient client.Client,
+	stagingClient ctrlruntimeclient.Client,
 	binding *kcpapisv1alpha2.APIBinding,
 	workspaceName string,
 ) error {
@@ -620,7 +618,7 @@ func (r *Reconciler) ensureBrokerRBAC(
 
 // cachedClient returns a cached client for the given host, creating one if needed.
 // The config's credentials are taken from TreeRootConfig; only the Host differs.
-func (r *Reconciler) cachedClient(host string) (client.Client, error) {
+func (r *Reconciler) cachedClient(host string) (ctrlruntimeclient.Client, error) {
 	r.clientCacheMu.Lock()
 	defer r.clientCacheMu.Unlock()
 	if cl, ok := r.clientCache[host]; ok {
@@ -628,7 +626,7 @@ func (r *Reconciler) cachedClient(host string) (client.Client, error) {
 	}
 	cfg := rest.CopyConfig(r.opts.TreeRootConfig)
 	cfg.Host = host
-	cl, err := client.New(cfg, client.Options{Scheme: r.treeRootScheme})
+	cl, err := ctrlruntimeclient.New(cfg, ctrlruntimeclient.Options{Scheme: r.treeRootScheme})
 	if err != nil {
 		return nil, err
 	}

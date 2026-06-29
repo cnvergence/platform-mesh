@@ -23,14 +23,13 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // makeCond constructs a metav1.Condition. The status parameter is a boolean
@@ -102,7 +101,7 @@ func CopyResource(
 	ctx context.Context,
 	gvk schema.GroupVersionKind,
 	sourceName, targetName types.NamespacedName,
-	source, target client.Client,
+	source, target ctrlruntimeclient.Client,
 	opts ...CopyResourceOptions,
 ) (metav1.Condition, error) {
 	var opt CopyResourceOptions
@@ -121,7 +120,7 @@ func CopyResource(
 	existing := &unstructured.Unstructured{}
 	existing.SetGroupVersionKind(gvk)
 	if err := target.Get(ctx, targetName, existing); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			targetObj := StripClusterMetadata(sourceObj)
 			targetObj.SetName(targetName.Name)
 			targetObj.SetNamespace(targetName.Namespace)

@@ -17,9 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	pmbrokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
 
-	brokerv1alpha1 "go.platform-mesh.io/apis/broker/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // +kubebuilder:rbac:groups=compute.generic.platform-mesh.io,resources=kubernetesclusters,verbs=get;list;watch;create;update;patch;delete
@@ -48,7 +48,7 @@ type KubernetesClusterStatus struct {
 
 	// RelatedResources lists resources related to this KubernetesCluster.
 	// +optional
-	RelatedResources brokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
+	RelatedResources pmbrokerv1alpha1.RelatedResources `json:"relatedResources,omitempty"`
 }
 
 // +kubebuilder:object:root=true
