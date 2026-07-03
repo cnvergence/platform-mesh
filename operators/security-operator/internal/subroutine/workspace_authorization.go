@@ -192,11 +192,10 @@ func (r *workspaceAuthSubroutine) Terminate(ctx context.Context, obj ctrlruntime
 		return subroutines.OK(), fmt.Errorf("getting orgs client: %w", err)
 	}
 
-	pending, err := deleteOrgResource(ctx, orgsClient, &kcptenancyv1alpha1.WorkspaceAuthenticationConfiguration{}, workspaceName)
+	_, err = deleteOrgResource(ctx, orgsClient, &kcptenancyv1alpha1.WorkspaceAuthenticationConfiguration{}, workspaceName)
 	if err != nil {
 		return subroutines.OK(), fmt.Errorf("deleting WorkspaceAuthenticationConfiguration %s: %w", workspaceName, err)
 	}
-	_ = pending // WAC has no finalizer; deletion is fire-and-forget during org termination.
 
 	return subroutines.OK(), nil
 }
