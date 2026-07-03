@@ -9,7 +9,7 @@ require (
 	github.com/kcp-dev/multicluster-provider v0.7.1
 	github.com/kcp-dev/sdk v0.31.2
 	github.com/stretchr/testify v1.11.1
-	go.platform-mesh.io/apis v0.0.2-0.20260629180252-15adbf980792
+	go.platform-mesh.io/apis v0.0.2
 	golang.org/x/sync v0.21.0
 	k8s.io/api v0.35.4
 	k8s.io/apimachinery v0.35.4

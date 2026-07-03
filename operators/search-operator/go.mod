@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
 	github.com/vrischmann/envconfig v1.4.1
-	go.platform-mesh.io/apis v0.0.1
+	go.platform-mesh.io/apis v0.0.2
 	go.platform-mesh.io/golang-commons v0.18.0
 	k8s.io/apimachinery v0.35.4
 	k8s.io/client-go v0.35.4

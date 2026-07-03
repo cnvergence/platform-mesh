@@ -27,8 +27,8 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/trace v1.44.0
-	go.platform-mesh.io/apis v0.0.0-20260624151021-68d43629ac0a
-	go.platform-mesh.io/golang-commons v0.0.0-20260622214312-00032b10b96f
+	go.platform-mesh.io/apis v0.0.2
+	go.platform-mesh.io/golang-commons v0.18.0
 	golang.org/x/sync v0.21.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
