@@ -10,8 +10,8 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
-	go.platform-mesh.io/apis v0.0.2
-	go.platform-mesh.io/golang-commons v0.18.0
+	go.platform-mesh.io/apis v0.0.3
+	go.platform-mesh.io/golang-commons v0.18.1
 	k8s.io/api v0.35.4
 	k8s.io/apimachinery v0.35.4
 	k8s.io/client-go v0.35.4
