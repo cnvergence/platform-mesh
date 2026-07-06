@@ -154,6 +154,21 @@ jobs:
             PLATFORMS=linux/amd64 \
             PUSH=false
 
+  terminal-image-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: docker/setup-qemu-action@5964de0df58d5ad28b04d8fe2e6b80ad47105b91 # v3
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+      - uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6
+        with:
+          context: operators/terminal-controller-manager/images/terminal
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # ──────────────────────────────────────────────
   # main: build and push the mutable :latest image.
   # ──────────────────────────────────────────────
@@ -209,6 +224,38 @@ jobs:
       security-events: write
     with:
       imageRef: ${{ needs.docker-build-latest.outputs.imageRef }}
+
+  terminal-image-build-push:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/terminal-controller-manager/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: docker/setup-qemu-action@5964de0df58d5ad28b04d8fe2e6b80ad47105b91 # v3
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Derive tag
+        id: tag
+        run: |
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            echo "value=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_REF#refs/tags/terminal-controller-manager/}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6
+        with:
+          context: operators/terminal-controller-manager/images/terminal
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/platform-mesh/platform-mesh/terminal:${{ steps.tag.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # ──────────────────────────────────────────────
   # Tag terminal-controller-manager/v*: dedicated immutable version release.
