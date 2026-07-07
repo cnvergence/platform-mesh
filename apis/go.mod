@@ -3,7 +3,7 @@ module go.platform-mesh.io/apis
 go 1.26.3
 
 require (
-	github.com/kcp-dev/sdk v0.32.2
+	github.com/kcp-dev/sdk v0.32.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
 	go.platform-mesh.io/golang-commons v0.18.1

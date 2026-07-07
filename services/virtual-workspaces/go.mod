@@ -3,12 +3,12 @@ module go.platform-mesh.io/virtual-workspaces
 go 1.26.3
 
 require (
-	github.com/kcp-dev/client-go v0.32.2
-	github.com/kcp-dev/kcp v0.32.2
+	github.com/kcp-dev/client-go v0.32.3
+	github.com/kcp-dev/kcp v0.32.3
 	github.com/kcp-dev/logicalcluster/v3 v3.0.5
 	github.com/kcp-dev/multicluster-provider v0.8.0
-	github.com/kcp-dev/sdk v0.32.2
-	github.com/kcp-dev/virtual-workspace-framework v0.32.2
+	github.com/kcp-dev/sdk v0.32.3
+	github.com/kcp-dev/virtual-workspace-framework v0.32.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
@@ -110,7 +110,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kcp-dev/apimachinery/v2 v2.32.2 // indirect
+	github.com/kcp-dev/apimachinery/v2 v2.32.3 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/moby/spdystream v0.5.1 // indirect

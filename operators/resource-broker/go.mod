@@ -7,7 +7,7 @@ require (
 	github.com/google/cel-go v0.28.1
 	github.com/google/go-cmp v0.7.0
 	github.com/kcp-dev/multicluster-provider v0.8.0
-	github.com/kcp-dev/sdk v0.32.2
+	github.com/kcp-dev/sdk v0.32.3
 	github.com/stretchr/testify v1.11.1
 	go.platform-mesh.io/apis v0.0.3
 	golang.org/x/sync v0.21.0
@@ -56,7 +56,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kcp-dev/apimachinery/v2 v2.32.2 // indirect
+	github.com/kcp-dev/apimachinery/v2 v2.32.3 // indirect
 	github.com/kcp-dev/logicalcluster/v3 v3.0.5 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
