@@ -42,7 +42,7 @@ vars:
   GO_TEST_COVERAGE_VERSION: v2.18.8
   MOCKERY_VERSION: v3.7.0
   OAPI_VERSION: v2.7.1
-  KCP_APIGEN_VERSION: v0.31.1
+  KCP_APIGEN_VERSION: v0.31.6
   # kcp release used by the operators' envtest suites (see component test-e2e).
   KCP_VERSION: 0.31.1
 
