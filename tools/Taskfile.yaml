@@ -43,6 +43,7 @@ vars:
   MOCKERY_VERSION: v3.7.0
   OAPI_VERSION: v2.7.1
   KCP_APIGEN_VERSION: v0.32.2
+
   # kcp release used by the operators' envtest suites (see component test-e2e).
   KCP_VERSION: 0.32.2
 
