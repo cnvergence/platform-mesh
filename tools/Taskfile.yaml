@@ -35,16 +35,17 @@ vars:
     sh: echo "$(git rev-parse --show-toplevel)"
   BIN: '{{.TOPLEVEL}}/bin'
   HACK: '{{.TOPLEVEL}}/hack'
-  CONTROLLER_TOOLS_VERSION: v0.20.1
-  ENVTEST_K8S_VERSION: "1.35.0"
-  ENVTEST_VERSION: release-0.23
+  CONTROLLER_TOOLS_VERSION: v0.21.0
+  ENVTEST_K8S_VERSION: "1.36.0"
+  ENVTEST_VERSION: release-0.24
   GOLANGCI_LINT_VERSION: 2.12.2
   GO_TEST_COVERAGE_VERSION: v2.18.8
   MOCKERY_VERSION: v3.7.0
   OAPI_VERSION: v2.7.1
-  KCP_APIGEN_VERSION: v0.31.6
+  KCP_APIGEN_VERSION: v0.32.2
+
   # kcp release used by the operators' envtest suites (see component test-e2e).
-  KCP_VERSION: 0.31.1
+  KCP_VERSION: 0.32.2
 
 env:
   UGET_DIRECTORY: '{{.BIN}}'
