@@ -55,15 +55,15 @@ type subroutine struct {
 	limiter            workqueue.TypedRateLimiter[*pmcorev1alpha1.Invite]
 }
 
-type keycloakUser struct {
+type KeycloakUser struct {
 	ID              string               `json:"id,omitempty"`
 	Email           string               `json:"email,omitempty"`
 	RequiredActions []string             `json:"requiredActions,omitempty"`
 	Enabled         bool                 `json:"enabled,omitempty"`
-	Credentials     []keycloakCredential `json:"credentials,omitempty"`
+	Credentials     []KeycloakCredential `json:"credentials,omitempty"`
 }
 
-type keycloakCredential struct {
+type KeycloakCredential struct {
 	Type      string `json:"type"`
 	Value     string `json:"value"`
 	Temporary bool   `json:"temporary"`
@@ -153,7 +153,7 @@ func (s *subroutine) Process(ctx context.Context, obj ctrlruntimeclient.Object) 
 		return subroutines.OK(), fmt.Errorf("failed to query users: %s", res.Status)
 	}
 
-	var users []keycloakUser
+	var users []KeycloakUser
 	if err = json.NewDecoder(res.Body).Decode(&users); err != nil {
 		return subroutines.OK(), err
 	}
@@ -203,7 +203,7 @@ func (s *subroutine) Process(ctx context.Context, obj ctrlruntimeclient.Object) 
 	log.Debug().Str("clientId", oidcClient.ClientID).Msg("Client verified")
 
 	// Create user
-	newUser := keycloakUser{
+	newUser := KeycloakUser{
 		Email:           invite.Spec.Email,
 		RequiredActions: []string{RequiredActionUpdatePassword, RequiredActionVerifyEmail},
 		Enabled:         true,
@@ -211,7 +211,7 @@ func (s *subroutine) Process(ctx context.Context, obj ctrlruntimeclient.Object) 
 
 	if s.setDefaultPassword {
 		newUser.RequiredActions = []string{RequiredActionUpdatePassword}
-		newUser.Credentials = []keycloakCredential{
+		newUser.Credentials = []KeycloakCredential{
 			{
 				Type:      UserDefaultPasswordType,
 				Value:     UserDefaultPasswordValue,

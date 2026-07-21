@@ -16,20 +16,38 @@ limitations under the License.
 
 package idp
 
-import "context"
+import (
+	"context"
 
-type ClientMetadata struct{}
-type ClientInformation struct{}
-type TenantConfig struct{}
-type ListUsersOptions struct{}
-type User struct{}
+	"go.platform-mesh.io/security-operator/pkg/clientreg"
+)
+
+type TenantConfig struct {
+	Realm string `json:"realm"`
+}
+type ListUsersOptions struct {
+	Email string `json:"email"`
+}
+type User struct {
+	ID              string       `json:"id,omitempty"`
+	Email           string       `json:"email,omitempty"`
+	RequiredActions []string     `json:"requiredActions,omitempty"`
+	Enabled         bool         `json:"enabled,omitempty"`
+	Credentials     []Credential `json:"credentials,omitempty"`
+}
+
+type Credential struct {
+	Type      string `json:"type"`
+	Value     string `json:"value"`
+	Temporary bool   `json:"temporary"`
+}
 
 // Provider defines the interface for an external OIDC provider
 type Provider interface {
 	// Client Registration (DCR - RFC 7591/7592)
-	RegisterClient(ctx context.Context, metadata ClientMetadata) (ClientInformation, error)
-	GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (ClientInformation, error)
-	UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata ClientMetadata) (ClientInformation, error)
+	RegisterClient(ctx context.Context, metadata clientreg.ClientMetadata) (clientreg.ClientInformation, error)
+	GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (clientreg.ClientInformation, error)
+	UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata clientreg.ClientMetadata) (clientreg.ClientInformation, error)
 	DeleteClient(ctx context.Context, clientID, registrationURI, registrationToken string) error
 
 	// Realm (org) Management (provider-specific)

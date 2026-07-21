@@ -23,8 +23,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/rs/zerolog/log"
+
+	"go.platform-mesh.io/security-operator/internal/idp"
+	"go.platform-mesh.io/security-operator/internal/subroutine/invite"
 	"go.platform-mesh.io/security-operator/pkg/clientreg"
 )
 
@@ -42,6 +47,10 @@ func NewAdminClient(httpClient *http.Client, baseURL, realm string) *AdminClient
 		baseURL:    strings.TrimSuffix(baseURL, "/"),
 		realm:      realm,
 	}
+}
+
+func (c *AdminClient) GetInitialAccessToken(ctx context.Context, _ string) (string, error) {
+	return c.TokenForRegistration(ctx)
 }
 
 func (c *AdminClient) TokenForRegistration(ctx context.Context) (string, error) {
@@ -71,6 +80,10 @@ func (c *AdminClient) TokenForRegistration(ctx context.Context) (string, error) 
 	}
 
 	return response.Token, nil
+}
+
+func (c *AdminClient) RefreshRegistrationToken(ctx context.Context, _, clientID string) (string, error) {
+	return c.RefreshToken(ctx, clientID)
 }
 
 func (c *AdminClient) RefreshToken(ctx context.Context, clientID string) (string, error) {
@@ -110,6 +123,10 @@ func (c *AdminClient) RegistrationEndpoint() string {
 	return fmt.Sprintf("%s/realms/%s/clients-registrations/openid-connect", c.baseURL, c.realm)
 }
 
+func (c *AdminClient) TenantExists(ctx context.Context, tenantID string) (bool, error) {
+	return c.RealmExists(ctx, tenantID)
+}
+
 func (c *AdminClient) RealmExists(ctx context.Context, realmName string) (bool, error) {
 	url := fmt.Sprintf("%s/admin/realms/%s", c.baseURL, realmName)
 
@@ -132,6 +149,25 @@ func (c *AdminClient) RealmExists(ctx context.Context, realmName string) (bool, 
 	}
 
 	return false, readErrorResponse(resp, "get realm")
+}
+
+func (c *AdminClient) CreateTenant(ctx context.Context, config idp.TenantConfig) (created bool, err error) {
+	return c.CreateOrUpdateRealm(ctx, RealmConfig{
+		Realm: config.Realm,
+	})
+}
+
+func (c *AdminClient) UpdateTenant(ctx context.Context, _ string, config idp.TenantConfig) error {
+	_, err := c.CreateOrUpdateRealm(ctx, RealmConfig{
+		Realm: config.Realm,
+	})
+	return err
+}
+
+func (c *AdminClient) EnsureTenant(ctx context.Context, tenantName string) (created bool, err error) {
+	return c.CreateOrUpdateRealm(ctx, RealmConfig{
+		Realm: tenantName,
+	})
 }
 
 func (c *AdminClient) CreateOrUpdateRealm(ctx context.Context, config RealmConfig) (created bool, err error) {
@@ -183,6 +219,10 @@ func (c *AdminClient) updateRealm(ctx context.Context, realmName string, body []
 	}
 
 	return nil
+}
+
+func (c *AdminClient) DeleteTenant(ctx context.Context, tenantID string) error {
+	return c.DeleteRealm(ctx, tenantID)
 }
 
 func (c *AdminClient) DeleteRealm(ctx context.Context, realmName string) error {
@@ -464,7 +504,126 @@ func (c *AdminClient) AssignRealmRoleToUser(ctx context.Context, userID string, 
 	return nil
 }
 
+func (c *AdminClient) RegisterClient(ctx context.Context, metadata clientreg.ClientMetadata) (clientreg.ClientInformation, error) {
+	client := clientreg.NewClient(clientreg.WithHTTPClient(c.httpClient), clientreg.WithTokenProvider(c))
+	return client.Register(ctx, c.RegistrationEndpoint(), metadata)
+}
+
+func (c *AdminClient) GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (clientreg.ClientInformation, error) {
+	client := clientreg.NewClient(clientreg.WithHTTPClient(c.httpClient), clientreg.WithTokenProvider(c))
+	return client.Read(ctx, clientID, registrationURI, registrationToken)
+}
+
+func (c *AdminClient) UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata clientreg.ClientMetadata) (clientreg.ClientInformation, error) {
+	client := clientreg.NewClient(clientreg.WithHTTPClient(c.httpClient), clientreg.WithTokenProvider(c))
+	return client.Update(ctx, registrationURI, registrationToken, metadata)
+}
+
+func (c *AdminClient) DeleteClient(ctx context.Context, clientID, registrationURI, registrationToken string) error {
+	client := clientreg.NewClient(clientreg.WithHTTPClient(c.httpClient), clientreg.WithTokenProvider(c))
+	return client.Delete(ctx, clientID, registrationURI, registrationToken)
+}
+
+func (c *AdminClient) GetUserByEmail(_ context.Context, _, email string) (*idp.User, error) {
+	v := url.Values{
+		"email":               {email},
+		"max":                 {"1"},
+		"briefRepresentation": {"true"},
+	}
+
+	res, err := c.httpClient.Get(fmt.Sprintf("%s/admin/realms/%s/users?%s", c.baseURL, c.realm, v.Encode()))
+	if err != nil {
+		log.Err(err).Msg("Failed to query users")
+		return nil, err
+	}
+	defer res.Body.Close() //nolint:errcheck
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to query users: %s", res.Status)
+	}
+
+	var keycloakUsers []invite.KeycloakUser
+	if err = json.NewDecoder(res.Body).Decode(&keycloakUsers); err != nil {
+		return nil, err
+	}
+
+	if len(keycloakUsers) == 0 {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	credentials := make([]idp.Credential, len(keycloakUsers[0].Credentials))
+	for j, keycloakCredential := range keycloakUsers[0].Credentials {
+		credentials[j] = idp.Credential{
+			Type:      keycloakCredential.Type,
+			Value:     keycloakCredential.Value,
+			Temporary: keycloakCredential.Temporary,
+		}
+	}
+
+	user := &idp.User{
+		ID:              keycloakUsers[0].ID,
+		Email:           keycloakUsers[0].Email,
+		RequiredActions: keycloakUsers[0].RequiredActions,
+		Enabled:         keycloakUsers[0].Enabled,
+		Credentials:     credentials,
+	}
+
+	return user, nil
+}
+
+func (c *AdminClient) ListUsers(_ context.Context, _ string, opts idp.ListUsersOptions) ([]*idp.User, error) {
+	res, err := c.httpClient.Get(fmt.Sprintf("%s/admin/realms/%s/users", c.baseURL, c.realm))
+	if err != nil {
+		log.Err(err).Msg("Failed to query users")
+		return nil, err
+	}
+	defer res.Body.Close() //nolint:errcheck
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to query users: %s", res.Status)
+	}
+
+	var keycloakUsers []invite.KeycloakUser
+	if err = json.NewDecoder(res.Body).Decode(&keycloakUsers); err != nil {
+		return nil, err
+	}
+
+	users := make([]*idp.User, len(keycloakUsers))
+	for i, keycloakUser := range keycloakUsers {
+		credentials := make([]idp.Credential, len(keycloakUser.Credentials))
+		for j, keycloakCredential := range keycloakUser.Credentials {
+			credentials[j] = idp.Credential{
+				Type:      keycloakCredential.Type,
+				Value:     keycloakCredential.Value,
+				Temporary: keycloakCredential.Temporary,
+			}
+		}
+
+		users[i] = &idp.User{
+			ID:              keycloakUser.ID,
+			Email:           keycloakUser.Email,
+			RequiredActions: keycloakUser.RequiredActions,
+			Enabled:         keycloakUser.Enabled,
+			Credentials:     credentials,
+		}
+	}
+
+	return users, nil
+}
+
+func (c *AdminClient) IssuerURL(tenantID string) string {
+	return fmt.Sprintf("%s/realms/%s", c.baseURL, c.realm)
+}
+func (c *AdminClient) JWKSURL(tenantID string) string {
+	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/certs", c.baseURL, c.realm)
+}
+func (c *AdminClient) AuthorizationEndpoint(tenantID string) string {
+	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/auth", c.baseURL, c.realm)
+}
+func (c *AdminClient) TokenEndpoint(tenantID string) string {
+	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", c.baseURL, c.realm)
+}
+
 var (
+	_ idp.Provider             = (*AdminClient)(nil)
 	_ clientreg.TokenProvider  = (*AdminClient)(nil)
 	_ clientreg.TokenRefresher = (*AdminClient)(nil)
 )

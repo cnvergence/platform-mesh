@@ -83,7 +83,7 @@ func (c *client) doRegister(ctx context.Context, registrationEndpoint, token str
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusCreated {
-		return ClientInformation{}, newHTTPErrorFromResponse(resp, OperationRegister)
+		return ClientInformation{}, NewHTTPErrorFromResponse(resp, OperationRegister)
 	}
 
 	var info ClientInformation
@@ -119,7 +119,7 @@ func (c *client) doRead(ctx context.Context, registrationClientURI, token string
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
-		return ClientInformation{}, newHTTPErrorFromResponse(resp, OperationRead)
+		return ClientInformation{}, NewHTTPErrorFromResponse(resp, OperationRead)
 	}
 
 	var info ClientInformation
@@ -161,7 +161,7 @@ func (c *client) doUpdate(ctx context.Context, registrationClientURI, token stri
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
-		return ClientInformation{}, newHTTPErrorFromResponse(resp, OperationUpdate)
+		return ClientInformation{}, NewHTTPErrorFromResponse(resp, OperationUpdate)
 	}
 
 	var info ClientInformation
@@ -196,7 +196,7 @@ func (c *client) doDelete(ctx context.Context, registrationClientURI, token stri
 	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusNoContent {
-		return newHTTPErrorFromResponse(resp, OperationDelete)
+		return NewHTTPErrorFromResponse(resp, OperationDelete)
 	}
 
 	return nil
