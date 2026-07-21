@@ -30,7 +30,7 @@ import (
 )
 
 type realmChecker interface {
-	OrganizationExists(ctx context.Context, tenantID string) (bool, error)
+	OrganizationExists(ctx context.Context, orgID string) (bool, error)
 }
 
 // SetupIdentityProviderConfigurationValidatingWebhookWithManager registers a validating webhook that prevents

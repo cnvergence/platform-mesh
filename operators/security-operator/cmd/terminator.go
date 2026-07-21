@@ -44,7 +44,7 @@ var terminatorCmd = &cobra.Command{
 	Use:   "terminator",
 	Short: "FGA terminator for organization and account workspaces",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		kcpCfg, err := getKubeconfigFromPath(terminatorCfg.KCP.Kubeconfig)
+		kcpCfg, err := getKubeconfigFromPath(cfg.KCP.Kubeconfig)
 		if err != nil {
 			log.Error().Err(err).Msg("unable to get kcp kubeconfig")
 			os.Exit(1)
@@ -74,7 +74,7 @@ var terminatorCmd = &cobra.Command{
 			mgrOpts.LeaderElectionConfig = inClusterCfg
 		}
 
-		provider, err := terminatingworkspaces.New(kcpCfg, terminatorCfg.WorkspaceTypeName,
+		provider, err := terminatingworkspaces.New(kcpCfg, cfg.WorkspaceTypeName,
 			terminatingworkspaces.Options{
 				Scheme: mgrOpts.Scheme,
 			},
@@ -90,7 +90,7 @@ var terminatorCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		conn, err := grpc.NewClient(terminatorCfg.FGA.Target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(cfg.FGA.Target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			log.Error().Err(err).Msg("unable to create grpc client")
 			os.Exit(1)
@@ -100,20 +100,20 @@ var terminatorCmd = &cobra.Command{
 		storeIDGetter := fga.NewCachingStoreIDGetter(
 			cmd.Context(),
 			fgaClient,
-			terminatorCfg.FGA.StoreIDCacheTTL,
+			cfg.FGA.StoreIDCacheTTL,
 			log,
 		)
 		kcpClientGetter := iclient.NewConfigSchemeKCPClientGetter(mgr.GetLocalManager().GetConfig(), mgr.GetLocalManager().GetScheme())
 
-		idpProvider, err := factory.Create2LeggedProvider(&operatorCfg)
+		idpProvider, err := factory.Create2LeggedProvider(&cfg)
 		if err != nil {
 			log.Error().Err(err).Msg("unable to create 2-legged IDP provider")
 			return err
 		}
 
-		orgReconciler, err := controller.NewOrgLogicalClusterController(log, kcpClientGetter, terminatorCfg, idpProvider, nil, mgr, controller.ControllerOptions{
+		orgReconciler, err := controller.NewOrgLogicalClusterController(log, kcpClientGetter, cfg, idpProvider, nil, mgr, controller.ControllerOptions{
 			Name:           "OrgLogicalClusterTerminator",
-			TerminatorName: terminatorCfg.TerminatorName(),
+			TerminatorName: cfg.TerminatorName(),
 		})
 		if err != nil {
 			log.Error().Err(err).Msg("unable to create OrgLogicalCluster reconciler")
@@ -124,9 +124,9 @@ var terminatorCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		alcReconciler, err := controller.NewAccountLogicalClusterController(log, terminatorCfg, fgaClient, storeIDGetter, mgr, kcpClientGetter, controller.ControllerOptions{
+		alcReconciler, err := controller.NewAccountLogicalClusterController(log, cfg, fgaClient, storeIDGetter, mgr, kcpClientGetter, controller.ControllerOptions{
 			Name:           "AccountLogicalClusterTerminator",
-			TerminatorName: terminatorCfg.TerminatorName(),
+			TerminatorName: cfg.TerminatorName(),
 		})
 		if err != nil {
 			log.Error().Err(err).Msg("unable to create AccountLogicalCluster reconciler")

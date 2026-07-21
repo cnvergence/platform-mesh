@@ -62,7 +62,7 @@ var initContainerCmd = &cobra.Command{
 			return fmt.Errorf("failed to read password: %w", err)
 		}
 
-		provider, err := factory.Create3LeggedProvider(initContainerConfig, &initializerCfg, password)
+		provider, err := factory.Create3LeggedProvider(initContainerConfig, &cfg, password)
 		if err != nil {
 			return fmt.Errorf("failed to create IDP provider: %w", err)
 		}
