@@ -27,7 +27,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"go.platform-mesh.io/security-operator/internal/config"
-	"go.platform-mesh.io/security-operator/pkg/clientreg/keycloak"
+	"go.platform-mesh.io/security-operator/internal/idp/keycloak"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

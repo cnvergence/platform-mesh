@@ -19,15 +19,17 @@ package idp
 import (
 	"context"
 
-	"go.platform-mesh.io/security-operator/pkg/clientreg"
+	"go.platform-mesh.io/security-operator/internal/idp/dcr"
 )
 
 type TenantConfig struct {
 	Realm string `json:"realm"`
 }
+
 type ListUsersOptions struct {
 	Email string `json:"email"`
 }
+
 type User struct {
 	ID              string       `json:"id,omitempty"`
 	Email           string       `json:"email,omitempty"`
@@ -45,9 +47,9 @@ type Credential struct {
 // Provider defines the interface for an external OIDC provider
 type Provider interface {
 	// Client Registration (DCR - RFC 7591/7592)
-	RegisterClient(ctx context.Context, metadata clientreg.ClientMetadata) (clientreg.ClientInformation, error)
-	GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (clientreg.ClientInformation, error)
-	UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata clientreg.ClientMetadata) (clientreg.ClientInformation, error)
+	RegisterClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error)
+	GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error)
+	UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error)
 	DeleteClient(ctx context.Context, clientID, registrationURI, registrationToken string) error
 
 	// Realm (org) Management (provider-specific)

@@ -34,11 +34,11 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 
-	"go.platform-mesh.io/security-operator/pkg/clientreg"
+	"go.platform-mesh.io/security-operator/internal/idp/dcr"
 )
 
 // ManagementClient wraps the Auth0 Management API SDK and implements the
-// clientreg token interfaces for OIDC dynamic client registration.
+// dcr token interfaces for OIDC dynamic client registration.
 type ManagementClient struct {
 	mgmt         *mgmtclient.Management
 	domain       string
@@ -307,7 +307,7 @@ func deref(s *string) string {
 }
 
 var (
-	_ clientreg.TokenProvider  = (*ManagementClient)(nil)
-	_ clientreg.TokenRefresher = (*ManagementClient)(nil)
-	_ oauth2.TokenSource       = (*ManagementClient)(nil)
+	_ dcr.TokenProvider  = (*ManagementClient)(nil)
+	_ dcr.TokenRefresher = (*ManagementClient)(nil)
+	_ oauth2.TokenSource = (*ManagementClient)(nil)
 )

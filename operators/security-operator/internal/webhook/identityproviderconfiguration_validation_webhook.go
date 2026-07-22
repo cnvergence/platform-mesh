@@ -27,8 +27,8 @@ import (
 
 	pmcorev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 	"go.platform-mesh.io/security-operator/internal/config"
-	"go.platform-mesh.io/security-operator/pkg/clientreg"
-	"go.platform-mesh.io/security-operator/pkg/clientreg/keycloak"
+	"go.platform-mesh.io/security-operator/internal/idp/dcr"
+	"go.platform-mesh.io/security-operator/internal/idp/keycloak"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -111,7 +111,7 @@ func newKeycloakAdminClient(ctx context.Context, cfg *config.Config) (*keycloak.
 
 	// Use the master realm for admin endpoint access.
 	adminClient := keycloak.NewAdminClient(adminHTTPClient, cfg.Keycloak.BaseURL, "master")
-	adminHTTPClient.Transport = clientreg.NewRetryTransport(adminHTTPClient.Transport, adminClient)
+	adminHTTPClient.Transport = dcr.NewRetryTransport(adminHTTPClient.Transport, adminClient)
 
 	return adminClient, nil
 }
