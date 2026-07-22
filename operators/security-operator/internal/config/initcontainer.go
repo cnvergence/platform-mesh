@@ -28,11 +28,11 @@ type InitContainerClientConfig struct {
 }
 
 type InitContainerConfiguration struct {
-	KeycloakBaseURL  string                      `mapstructure:"keycloakBaseURL"`
-	KeycloakClientID string                      `mapstructure:"keycloakClientID" default:"admin-cli"`
-	KeycloakUser     string                      `mapstructure:"keycloakUser" default:"admin"`
-	PasswordFile     string                      `mapstructure:"passwordFile" default:"/secrets/keycloak-password"`
-	Clients          []InitContainerClientConfig `mapstructure:"clients"`
+	IDPBaseURL   string                      `mapstructure:"idpBaseURL"`
+	IDPClientID  string                      `mapstructure:"idpClientID" default:"admin-cli"`
+	IDPUser      string                      `mapstructure:"idpUser" default:"admin"`
+	PasswordFile string                      `mapstructure:"passwordFile" default:"/secrets/idp-password"`
+	Clients      []InitContainerClientConfig `mapstructure:"clients"`
 }
 
 type InitContainerConfig struct {

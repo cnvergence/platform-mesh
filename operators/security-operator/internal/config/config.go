@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"net/http"
 	"os"
 	"time"
 
@@ -81,6 +82,10 @@ type IDPConfig struct {
 
 	AccessTokenLifespan int
 	RegistrationAllowed bool
+
+	// BaseHTTPClient is initialized once, lazily, at the beginning of startup
+	// and is then injected and used by the concrete IDP implementations.
+	BaseHTTPClient *http.Client
 }
 
 type APIExportEndpointSlices struct {

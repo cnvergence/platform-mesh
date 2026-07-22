@@ -30,6 +30,7 @@ import (
 	iclient "go.platform-mesh.io/security-operator/internal/client"
 	"go.platform-mesh.io/security-operator/internal/controller"
 	"go.platform-mesh.io/security-operator/internal/fga"
+	"go.platform-mesh.io/security-operator/internal/idp/factory"
 	"go.platform-mesh.io/security-operator/internal/predicates"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -79,7 +80,7 @@ var initializerCmd = &cobra.Command{
 			mgrOpts.LeaderElectionConfig = inClusterCfg
 		}
 
-		provider, err := initializingworkspaces.New(restCfg, initializerCfg.WorkspaceTypeName,
+		mcrProvider, err := initializingworkspaces.New(restCfg, initializerCfg.WorkspaceTypeName,
 			initializingworkspaces.Options{
 				Scheme: mgrOpts.Scheme,
 			},
@@ -89,7 +90,7 @@ var initializerCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		mgr, err := mcmanager.New(restCfg, provider, mgrOpts)
+		mgr, err := mcmanager.New(restCfg, mcrProvider, mgrOpts)
 		if err != nil {
 			setupLog.Error(err, "Failed to create manager")
 			os.Exit(1)
@@ -112,7 +113,14 @@ var initializerCmd = &cobra.Command{
 		}
 
 		kcpClientGetter := iclient.NewConfigSchemeKCPClientGetter(restCfg, scheme)
-		orgReconciler, err := controller.NewOrgLogicalClusterController(log, kcpClientGetter, initializerCfg, runtimeClient, mgr, controller.ControllerOptions{
+
+		idpProvider, err := factory.Create2LeggedProvider(&operatorCfg, "master")
+		if err != nil {
+			log.Error().Err(err).Msg("unable to create 2-legged IDP provider")
+			return err
+		}
+
+		orgReconciler, err := controller.NewOrgLogicalClusterController(log, kcpClientGetter, initializerCfg, idpProvider, runtimeClient, mgr, controller.ControllerOptions{
 			Name:            "OrgLogicalClusterInitializer",
 			InitializerName: initializerCfg.InitializerName(),
 		})

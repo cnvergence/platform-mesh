@@ -21,13 +21,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/coreos/go-oidc"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"golang.org/x/oauth2"
 
 	"go.platform-mesh.io/security-operator/internal/config"
-	"go.platform-mesh.io/security-operator/internal/idp/keycloak"
+	"go.platform-mesh.io/security-operator/internal/idp"
+	"go.platform-mesh.io/security-operator/internal/idp/factory"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,7 +39,7 @@ var initContainerCfg config.InitContainerConfig
 
 var initContainerCmd = &cobra.Command{
 	Use:   "init-container",
-	Short: "Bootstrap Keycloak service account clients in the master realm",
+	Short: "Bootstrap service account clients in the master tenant",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
@@ -49,8 +48,8 @@ var initContainerCmd = &cobra.Command{
 			log.Warn().Err(err).Msg("Failed to load config file, using flags/env only")
 		}
 
-		if initContainerConfig.KeycloakBaseURL == "" {
-			return fmt.Errorf("keycloak-base-url is required")
+		if initContainerConfig.IDPBaseURL == "" {
+			return fmt.Errorf("idp-base-url is required")
 		}
 		if len(initContainerConfig.Clients) == 0 {
 			return fmt.Errorf("at least one client must be configured")
@@ -61,24 +60,10 @@ var initContainerCmd = &cobra.Command{
 			return fmt.Errorf("failed to read password: %w", err)
 		}
 
-		issuer := fmt.Sprintf("%s/realms/master", initContainerConfig.KeycloakBaseURL)
-		provider, err := oidc.NewProvider(ctx, issuer)
+		provider, err := factory.Create3LeggedProvider(initContainerConfig, password, "master")
 		if err != nil {
-			return fmt.Errorf("failed to initialize OIDC provider: %w", err)
+			return fmt.Errorf("failed to create IDP provider: %w", err)
 		}
-
-		oauthCfg := oauth2.Config{
-			ClientID: initContainerConfig.KeycloakClientID,
-			Endpoint: provider.Endpoint(),
-		}
-
-		token, err := oauthCfg.PasswordCredentialsToken(ctx, initContainerConfig.KeycloakUser, password)
-		if err != nil {
-			return fmt.Errorf("failed to get token: %w", err)
-		}
-
-		httpClient := oauthCfg.Client(ctx, token)
-		adminClient := keycloak.NewAdminClient(httpClient, initContainerConfig.KeycloakBaseURL, "master")
 
 		k8sCfg := ctrl.GetConfigOrDie()
 
@@ -87,7 +72,7 @@ var initContainerCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Kubernetes client: %w", err)
 		}
 
-		adminRole, err := adminClient.GetRealmRole(ctx, "admin")
+		adminRole, err := provider.GetRealmRole(ctx, "admin")
 		if err != nil {
 			return fmt.Errorf("failed to get admin role: %w", err)
 		}
@@ -95,11 +80,11 @@ var initContainerCmd = &cobra.Command{
 			return fmt.Errorf("admin role not found in master realm")
 		}
 
-		existingClients, err := adminClient.ListClients(ctx)
+		existingClients, err := provider.ListClients(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to list existing clients: %w", err)
 		}
-		existingClientMap := make(map[string]*keycloak.ClientInfo)
+		existingClientMap := make(map[string]*idp.ClientInfo)
 		for i := range existingClients {
 			existingClientMap[existingClients[i].ClientID] = &existingClients[i]
 		}
@@ -115,7 +100,7 @@ var initContainerCmd = &cobra.Command{
 				clientUUID = existing.ID
 			} else {
 				log.Info().Str("clientID", clientCfg.Name).Msg("Creating service account client")
-				created, err := adminClient.CreateServiceAccountClient(ctx, keycloak.ServiceAccountClientConfig{
+				created, err := provider.CreateServiceAccountClient(ctx, idp.ServiceAccountClientConfig{
 					ClientID:               clientCfg.Name,
 					Name:                   clientCfg.Name,
 					Enabled:                true,
@@ -128,17 +113,17 @@ var initContainerCmd = &cobra.Command{
 				clientUUID = created.ID
 			}
 
-			clientSecret, err := adminClient.GetClientSecret(ctx, clientUUID)
+			clientSecret, err := provider.GetClientSecret(ctx, clientUUID)
 			if err != nil {
 				return fmt.Errorf("failed to get client secret for %q: %w", clientCfg.Name, err)
 			}
 
-			serviceAccountUser, err := adminClient.GetServiceAccountUser(ctx, clientUUID)
+			serviceAccountUser, err := provider.GetServiceAccountUser(ctx, clientUUID)
 			if err != nil {
 				return fmt.Errorf("failed to get service account user for %q: %w", clientCfg.Name, err)
 			}
 
-			if err := adminClient.AssignRealmRoleToUser(ctx, serviceAccountUser.ID, *adminRole); err != nil {
+			if err := provider.AssignRealmRoleToUser(ctx, serviceAccountUser.ID, *adminRole); err != nil {
 				return fmt.Errorf("failed to assign admin role to %q: %w", clientCfg.Name, err)
 			}
 

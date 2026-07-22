@@ -27,6 +27,7 @@ import (
 	"go.platform-mesh.io/golang-commons/logger"
 	iclient "go.platform-mesh.io/security-operator/internal/client"
 	"go.platform-mesh.io/security-operator/internal/config"
+	"go.platform-mesh.io/security-operator/internal/idp"
 	"go.platform-mesh.io/security-operator/internal/metrics"
 	"go.platform-mesh.io/security-operator/internal/subroutine"
 	"go.platform-mesh.io/subroutines"
@@ -58,7 +59,7 @@ type OrgLogicalClusterController struct {
 	rateLimiter workqueue.TypedRateLimiter[mcreconcile.Request]
 }
 
-func NewOrgLogicalClusterController(log *logger.Logger, kcpClientGetter iclient.KCPClientGetter, cfg config.Config, inClusterClient ctrlruntimeclient.Client, mgr mcmanager.Manager, opts ControllerOptions) (*OrgLogicalClusterController, error) {
+func NewOrgLogicalClusterController(log *logger.Logger, kcpClientGetter iclient.KCPClientGetter, cfg config.Config, provider idp.Provider, inClusterClient ctrlruntimeclient.Client, mgr mcmanager.Manager, opts ControllerOptions) (*OrgLogicalClusterController, error) {
 	rl, err := ratelimiter.NewStaticThenExponentialRateLimiter[mcreconcile.Request](ratelimiter.NewConfig())
 	if err != nil {
 		return nil, fmt.Errorf("creating RateLimiter: %w", err)
@@ -84,7 +85,7 @@ func NewOrgLogicalClusterController(log *logger.Logger, kcpClientGetter iclient.
 		subs = append(subs, inviteSub)
 	}
 	if cfg.Initializer.WorkspaceAuthEnabled {
-		subs = append(subs, subroutine.NewWorkspaceAuthConfigurationSubroutine(inClusterClient, mgr, kcpClientGetter, cfg))
+		subs = append(subs, subroutine.NewWorkspaceAuthConfigurationSubroutine(inClusterClient, mgr, provider, kcpClientGetter, cfg))
 	}
 	lc := lifecycle.New(mgr, opts.Name, func() ctrlruntimeclient.Object {
 		return &kcpcorev1alpha1.LogicalCluster{}

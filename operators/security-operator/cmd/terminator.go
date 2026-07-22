@@ -28,6 +28,7 @@ import (
 	iclient "go.platform-mesh.io/security-operator/internal/client"
 	"go.platform-mesh.io/security-operator/internal/controller"
 	"go.platform-mesh.io/security-operator/internal/fga"
+	"go.platform-mesh.io/security-operator/internal/idp/factory"
 	"go.platform-mesh.io/security-operator/internal/predicates"
 	"go.platform-mesh.io/security-operator/internal/terminatingworkspaces"
 
@@ -104,7 +105,13 @@ var terminatorCmd = &cobra.Command{
 		)
 		kcpClientGetter := iclient.NewConfigSchemeKCPClientGetter(mgr.GetLocalManager().GetConfig(), mgr.GetLocalManager().GetScheme())
 
-		orgReconciler, err := controller.NewOrgLogicalClusterController(log, kcpClientGetter, terminatorCfg, nil, mgr, controller.ControllerOptions{
+		idpProvider, err := factory.Create2LeggedProvider(&operatorCfg, "master")
+		if err != nil {
+			log.Error().Err(err).Msg("unable to create 2-legged IDP provider")
+			return err
+		}
+
+		orgReconciler, err := controller.NewOrgLogicalClusterController(log, kcpClientGetter, terminatorCfg, idpProvider, nil, mgr, controller.ControllerOptions{
 			Name:           "OrgLogicalClusterTerminator",
 			TerminatorName: terminatorCfg.TerminatorName(),
 		})

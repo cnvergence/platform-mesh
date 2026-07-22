@@ -25,6 +25,7 @@ import (
 	pmcorev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 	iclient "go.platform-mesh.io/security-operator/internal/client"
 	"go.platform-mesh.io/security-operator/internal/config"
+	"go.platform-mesh.io/security-operator/internal/idp"
 	"go.platform-mesh.io/subroutines"
 
 	corev1 "k8s.io/api/core/v1"
@@ -41,14 +42,16 @@ import (
 )
 
 type workspaceAuthSubroutine struct {
+	provider        idp.Provider
 	runtimeClient   ctrlruntimeclient.Client
 	mgr             mcmanager.Manager
 	kcpClientGetter iclient.KCPClientGetter
 	cfg             config.Config
 }
 
-func NewWorkspaceAuthConfigurationSubroutine(runtimeClient ctrlruntimeclient.Client, mgr mcmanager.Manager, kcpClientGetter iclient.KCPClientGetter, cfg config.Config) *workspaceAuthSubroutine {
+func NewWorkspaceAuthConfigurationSubroutine(runtimeClient ctrlruntimeclient.Client, mgr mcmanager.Manager, provider idp.Provider, kcpClientGetter iclient.KCPClientGetter, cfg config.Config) *workspaceAuthSubroutine {
 	return &workspaceAuthSubroutine{
+		provider:        provider,
 		runtimeClient:   runtimeClient,
 		mgr:             mgr,
 		kcpClientGetter: kcpClientGetter,
@@ -116,7 +119,7 @@ func (r *workspaceAuthSubroutine) reconcile(ctx context.Context, obj ctrlruntime
 
 	jwtAuthenticationConfiguration := kcptenancyv1alpha1.JWTAuthenticator{
 		Issuer: kcptenancyv1alpha1.Issuer{
-			URL:                 fmt.Sprintf("https://%s/keycloak/realms/%s", r.cfg.BaseDomain, workspaceName),
+			URL:                 r.provider.IssuerURL(workspaceName),
 			AudienceMatchPolicy: kcptenancyv1alpha1.AudienceMatchPolicyMatchAny,
 			Audiences:           audiences,
 		},

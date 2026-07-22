@@ -18,10 +18,7 @@ package webhook
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,7 +35,7 @@ type fakeRealmChecker struct {
 	err    error
 }
 
-func (f fakeRealmChecker) RealmExists(ctx context.Context, realmName string) (bool, error) {
+func (f fakeRealmChecker) TenantExists(ctx context.Context, realmName string) (bool, error) {
 	return f.exists, f.err
 }
 
@@ -89,8 +86,8 @@ func TestIdentityProviderConfigurationValidator_ValidateCreate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			v := &identityProviderConfigurationValidator{
-				keycloakClient: tt.checker,
-				realmDenyList:  tt.realmDenyList,
+				provider:      tt.checker,
+				realmDenyList: tt.realmDenyList,
 			}
 			_, err := v.ValidateCreate(t.Context(), &pmcorev1alpha1.IdentityProviderConfiguration{
 				ObjectMeta: metav1.ObjectMeta{Name: tt.realmName},
@@ -108,68 +105,15 @@ func TestIdentityProviderConfigurationValidator_ValidateCreate(t *testing.T) {
 }
 
 func TestIdentityProviderConfigurationValidator_ValidateUpdate(t *testing.T) {
-	v := &identityProviderConfigurationValidator{keycloakClient: fakeRealmChecker{exists: true}}
+	v := &identityProviderConfigurationValidator{provider: fakeRealmChecker{exists: true}}
 	_, err := v.ValidateUpdate(t.Context(), &pmcorev1alpha1.IdentityProviderConfiguration{}, &pmcorev1alpha1.IdentityProviderConfiguration{})
 	require.NoError(t, err)
 }
 
 func TestIdentityProviderConfigurationValidator_ValidateDelete(t *testing.T) {
-	v := &identityProviderConfigurationValidator{keycloakClient: fakeRealmChecker{}}
+	v := &identityProviderConfigurationValidator{provider: fakeRealmChecker{}}
 	_, err := v.ValidateDelete(t.Context(), &pmcorev1alpha1.IdentityProviderConfiguration{})
 	require.NoError(t, err)
-}
-
-func TestNewKeycloakAdminClient(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupServer func(t *testing.T) *httptest.Server
-		wantErr     bool
-	}{
-		{
-			name: "OIDC discovery fails",
-			setupServer: func(t *testing.T) *httptest.Server {
-				srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-				srv.Close() // nothing listening → connection refused
-				return srv
-			},
-			wantErr: true,
-		},
-		{
-			name: "success",
-			setupServer: func(t *testing.T) *httptest.Server {
-				var srvURL string
-				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-						"issuer":                 srvURL + "/realms/master",
-						"token_endpoint":         srvURL + "/realms/master/protocol/openid-connect/token",
-						"authorization_endpoint": srvURL + "/realms/master/protocol/openid-connect/auth",
-						"jwks_uri":               srvURL + "/realms/master/protocol/openid-connect/certs",
-					})
-				}))
-				srvURL = srv.URL
-				return srv
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := tt.setupServer(t)
-			defer srv.Close()
-
-			cfg := &config.Config{}
-			cfg.Keycloak.BaseURL = srv.URL
-			cfg.Keycloak.ClientID = "test-client"
-			cfg.Keycloak.ClientSecret = "test-secret"
-
-			client, err := newKeycloakAdminClient(t.Context(), cfg)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			assert.NotNil(t, client)
-		})
-	}
 }
 
 func TestSetupIdentityProviderConfigurationValidatingWebhookWithManager_AdminClientError(t *testing.T) {

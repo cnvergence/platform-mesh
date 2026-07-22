@@ -28,6 +28,7 @@ import (
 	"go.platform-mesh.io/golang-commons/controller/lifecycle/ratelimiter"
 	iclient "go.platform-mesh.io/security-operator/internal/client"
 	"go.platform-mesh.io/security-operator/internal/config"
+	"go.platform-mesh.io/security-operator/internal/idp"
 	"go.platform-mesh.io/subroutines"
 
 	corev1 "k8s.io/api/core/v1"
@@ -71,6 +72,7 @@ var (
 )
 
 type IDPSubroutine struct {
+	provider                  idp.Provider
 	mgr                       mcmanager.Manager
 	kcpClientGetter           iclient.KCPClientGetter
 	additionalRedirectURLs    []string
@@ -222,7 +224,6 @@ func (i *IDPSubroutine) patchAccountInfo(ctx context.Context, cl ctrlruntimeclie
 		return fmt.Errorf("failed to get accountInfo: %w", err)
 	}
 
-	desiredIssuerURL := fmt.Sprintf("https://%s/keycloak/realms/%s", i.baseDomain, workspaceName)
 	desiredClients := make(map[string]pmcorev1alpha1.ClientInfo)
 	for clientName, managedClient := range idp.Status.ManagedClients {
 		desiredClients[clientName] = pmcorev1alpha1.ClientInfo{
@@ -231,7 +232,7 @@ func (i *IDPSubroutine) patchAccountInfo(ctx context.Context, cl ctrlruntimeclie
 	}
 
 	desiredOIDC := &pmcorev1alpha1.OIDCInfo{
-		IssuerURL: desiredIssuerURL,
+		IssuerURL: i.provider.IssuerURL(workspaceName),
 		Clients:   desiredClients,
 	}
 

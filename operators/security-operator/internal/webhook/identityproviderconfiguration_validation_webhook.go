@@ -22,64 +22,53 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/coreos/go-oidc"
-	"golang.org/x/oauth2/clientcredentials"
-
 	pmcorev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
-	"go.platform-mesh.io/security-operator/internal/config"
-	"go.platform-mesh.io/security-operator/internal/idp/dcr"
-	"go.platform-mesh.io/security-operator/internal/idp/keycloak"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	mcruntime "sigs.k8s.io/multicluster-runtime"
 )
 
-// SetupIdentityProviderConfigurationValidatingWebhookWithManager registers a validating webhook that prevents
-// creation of an `IdentityProviderConfiguration` if the corresponding Keycloak realm already exists.
-func SetupIdentityProviderConfigurationValidatingWebhookWithManager(ctx context.Context, mgr ctrl.Manager, cfg *config.Config) error {
-	keycloakClient, err := newKeycloakAdminClient(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("failed to create keycloak admin client for webhook: %w", err)
-	}
+type realmChecker interface {
+	TenantExists(ctx context.Context, tenantID string) (bool, error)
+}
 
-	realmDenyList := slices.Clone(cfg.IDP.RealmDenyList)
+// SetupIdentityProviderConfigurationValidatingWebhookWithManager registers a validating webhook that prevents
+// creation of an `IdentityProviderConfiguration` if the corresponding IDP tenant already exists.
+// TODO: provider is a 2-legged provider.
+func SetupIdentityProviderConfigurationValidatingWebhookWithManager(ctx context.Context, mgr ctrl.Manager, provider realmChecker, denyList []string) error {
+	realmDenyList := slices.Clone(denyList) // TODO: Why are we cloning this slice?
 
 	return mcruntime.NewWebhookManagedBy(mgr, &pmcorev1alpha1.IdentityProviderConfiguration{}).
-		WithValidator(&identityProviderConfigurationValidator{keycloakClient: keycloakClient, realmDenyList: realmDenyList}).
+		WithValidator(&identityProviderConfigurationValidator{provider: provider, realmDenyList: realmDenyList}).
 		Complete()
 }
 
 var _ admission.Validator[*pmcorev1alpha1.IdentityProviderConfiguration] = (*identityProviderConfigurationValidator)(nil)
-var _ realmChecker = (*keycloak.AdminClient)(nil)
 
 type identityProviderConfigurationValidator struct {
-	keycloakClient realmChecker
-	realmDenyList  []string
-}
-
-type realmChecker interface {
-	RealmExists(ctx context.Context, realmName string) (bool, error)
+	provider      realmChecker
+	realmDenyList []string
 }
 
 func (v *identityProviderConfigurationValidator) ValidateCreate(ctx context.Context, idp *pmcorev1alpha1.IdentityProviderConfiguration) (admission.Warnings, error) {
-	realmName := strings.TrimSpace(idp.GetName())
-	if realmName == "" {
-		return nil, fmt.Errorf("realm name must not be empty")
+	tenantName := strings.TrimSpace(idp.GetName())
+	if tenantName == "" {
+		return nil, fmt.Errorf("tenant name must not be empty")
 	}
-	if realmName == "master" {
-		return nil, fmt.Errorf("creation of IdentityProviderConfiguration for realm 'master' is not allowed")
+	if tenantName == "master" {
+		return nil, fmt.Errorf("creation of IdentityProviderConfiguration for tenant 'master' is not allowed")
 	}
-	if slices.Contains(v.realmDenyList, realmName) {
-		return nil, fmt.Errorf("creation of IdentityProviderConfiguration for realm %q is not allowed", realmName)
+	if slices.Contains(v.realmDenyList, tenantName) {
+		return nil, fmt.Errorf("creation of IdentityProviderConfiguration for tenant %q is not allowed", tenantName)
 	}
 
-	exists, err := v.keycloakClient.RealmExists(ctx, realmName)
+	exists, err := v.provider.TenantExists(ctx, tenantName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check realm existence in keycloak: %w", err)
+		return nil, fmt.Errorf("failed to check tenant existence: %w", err)
 	}
 	if exists {
-		return nil, fmt.Errorf("keycloak realm %q already exists", realmName)
+		return nil, fmt.Errorf("tenant %q already exists", tenantName)
 	}
 
 	return nil, nil
@@ -92,26 +81,4 @@ func (v *identityProviderConfigurationValidator) ValidateUpdate(ctx context.Cont
 
 func (v *identityProviderConfigurationValidator) ValidateDelete(ctx context.Context, obj *pmcorev1alpha1.IdentityProviderConfiguration) (admission.Warnings, error) {
 	return nil, nil
-}
-
-func newKeycloakAdminClient(ctx context.Context, cfg *config.Config) (*keycloak.AdminClient, error) {
-	issuer := fmt.Sprintf("%s/realms/master", cfg.Keycloak.BaseURL)
-	provider, err := oidc.NewProvider(ctx, issuer)
-	if err != nil {
-		return nil, err
-	}
-
-	cCfg := clientcredentials.Config{
-		ClientID:     cfg.Keycloak.ClientID,
-		ClientSecret: cfg.Keycloak.ClientSecret,
-		TokenURL:     provider.Endpoint().TokenURL,
-	}
-
-	adminHTTPClient := cCfg.Client(ctx)
-
-	// Use the master realm for admin endpoint access.
-	adminClient := keycloak.NewAdminClient(adminHTTPClient, cfg.Keycloak.BaseURL, "master")
-	adminHTTPClient.Transport = dcr.NewRetryTransport(adminHTTPClient.Transport, adminClient)
-
-	return adminClient, nil
 }

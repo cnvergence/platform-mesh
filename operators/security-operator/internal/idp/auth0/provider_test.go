@@ -39,9 +39,9 @@ func closedServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func managementClient(t *testing.T, srv *httptest.Server) *ManagementClient {
+func managementClient(t *testing.T, srv *httptest.Server) *Provider {
 	t.Helper()
-	return NewManagementClient(srv.URL, "m2m-client", "m2m-secret", option.WithoutRetries())
+	return New(srv.URL, "m2m-client", "m2m-secret", option.WithoutRetries())
 }
 
 // withToken serves a management token on /oauth/token and delegates all other
@@ -214,21 +214,21 @@ func TestManagementClient_RefreshToken(t *testing.T) {
 func TestManagementClient_RegistrationEndpoint(t *testing.T) {
 	assert.Equal(t,
 		"https://my-tenant.eu.auth0.com/oidc/register",
-		NewManagementClient("https://my-tenant.eu.auth0.com", "id", "secret").RegistrationEndpoint(),
+		New("https://my-tenant.eu.auth0.com", "id", "secret").RegistrationEndpoint(),
 	)
 }
 
 func TestManagementClient_RegistrationEndpoint_TrailingSlash(t *testing.T) {
 	assert.Equal(t,
 		"https://my-tenant.eu.auth0.com/oidc/register",
-		NewManagementClient("https://my-tenant.eu.auth0.com/", "id", "secret").RegistrationEndpoint(),
+		New("https://my-tenant.eu.auth0.com/", "id", "secret").RegistrationEndpoint(),
 	)
 }
 
 func TestManagementClient_RegistrationEndpoint_NoScheme(t *testing.T) {
 	assert.Equal(t,
 		"https://my-tenant.eu.auth0.com/oidc/register",
-		NewManagementClient("my-tenant.eu.auth0.com", "id", "secret").RegistrationEndpoint(),
+		New("my-tenant.eu.auth0.com", "id", "secret").RegistrationEndpoint(),
 	)
 }
 

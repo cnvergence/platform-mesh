@@ -39,7 +39,7 @@ func closedServer(t *testing.T) *httptest.Server {
 
 func adminClient(t *testing.T, srv *httptest.Server) *AdminClient {
 	t.Helper()
-	return NewAdminClient(http.DefaultClient, srv.URL, "test-realm")
+	return New(http.DefaultClient, srv.URL, "test-realm")
 }
 
 func listClientsJSON() string {
@@ -227,14 +227,14 @@ func TestAdminClient_RefreshToken(t *testing.T) {
 func TestAdminClient_RegistrationEndpoint(t *testing.T) {
 	assert.Equal(t,
 		"https://keycloak.example.com/realms/my-realm/clients-registrations/openid-connect",
-		NewAdminClient(nil, "https://keycloak.example.com", "my-realm").RegistrationEndpoint(),
+		New(nil, "https://keycloak.example.com", "my-realm").RegistrationEndpoint(),
 	)
 }
 
 func TestAdminClient_RegistrationEndpoint_TrailingSlash(t *testing.T) {
 	assert.Equal(t,
 		"https://keycloak.example.com/realms/my-realm/clients-registrations/openid-connect",
-		NewAdminClient(nil, "https://keycloak.example.com/", "my-realm").RegistrationEndpoint(),
+		New(nil, "https://keycloak.example.com/", "my-realm").RegistrationEndpoint(),
 	)
 }
 

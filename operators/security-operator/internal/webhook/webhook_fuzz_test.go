@@ -42,8 +42,8 @@ func FuzzIdentityProviderConfigurationValidateCreate(f *testing.F) {
 			ObjectMeta: metav1.ObjectMeta{Name: name},
 		}
 		v := &identityProviderConfigurationValidator{
-			keycloakClient: fakeRealmChecker{exists: false},
-			realmDenyList:  denyList,
+			provider:      fakeRealmChecker{exists: false},
+			realmDenyList: denyList,
 		}
 
 		// Must not panic — validation errors are expected

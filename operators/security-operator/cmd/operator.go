@@ -32,6 +32,7 @@ import (
 	iclient "go.platform-mesh.io/security-operator/internal/client"
 	"go.platform-mesh.io/security-operator/internal/controller"
 	fga2 "go.platform-mesh.io/security-operator/internal/fga"
+	"go.platform-mesh.io/security-operator/internal/idp/factory"
 	"go.platform-mesh.io/security-operator/internal/predicates"
 	internalwebhook "go.platform-mesh.io/security-operator/internal/webhook"
 
@@ -182,7 +183,14 @@ var operatorCmd = &cobra.Command{
 		kcpClientGetter := iclient.NewManagerKCPClientGetter(mgr, provider.Provider.Provider)
 		kcpClientGetterWithConfig := iclient.NewConfigSchemeKCPClientGetter(restCfg, scheme)
 
-		inviteReconciler, err := controller.NewInviteReconciler(ctx, mgr, &operatorCfg, log, kcpClientGetter)
+		idpProvider, err := factory.Create2LeggedProvider(&operatorCfg, "master")
+		if err != nil {
+			log.Error().Err(err).Msg("unable to create 2-legged IDP provider")
+			return err
+		}
+
+		// wants 2l provider
+		inviteReconciler, err := controller.NewInviteReconciler(ctx, mgr, &operatorCfg, idpProvider, log, kcpClientGetter)
 		if err != nil {
 			log.Error().Err(err).Str("controller", "invite").Msg("unable to create reconciler")
 			return err
@@ -191,7 +199,7 @@ var operatorCmd = &cobra.Command{
 			log.Error().Err(err).Str("controller", "invite").Msg("unable to create controller")
 			return err
 		}
-		orgReconciler, err := controller.NewOrgLogicalClusterController(log, kcpClientGetterWithConfig, operatorCfg, runtimeClient, mgr, controller.ControllerOptions{
+		orgReconciler, err := controller.NewOrgLogicalClusterController(log, kcpClientGetterWithConfig, operatorCfg, idpProvider, runtimeClient, mgr, controller.ControllerOptions{
 			Name: "OrgLogicalClusterReconciler",
 		})
 		if err != nil {
@@ -227,7 +235,7 @@ var operatorCmd = &cobra.Command{
 
 		if operatorCfg.Webhooks.Enabled {
 			log.Info().Msg("validating webhooks are enabled")
-			if err := internalwebhook.SetupIdentityProviderConfigurationValidatingWebhookWithManager(ctx, mgr.GetLocalManager(), &operatorCfg); err != nil {
+			if err := internalwebhook.SetupIdentityProviderConfigurationValidatingWebhookWithManager(ctx, mgr.GetLocalManager(), idpProvider, operatorCfg.IDP.RealmDenyList); err != nil {
 				log.Error().Err(err).Str("webhook", "IdentityProviderConfiguration").Msg("unable to create webhook")
 				return err
 			}

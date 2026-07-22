@@ -35,13 +35,26 @@ import (
 
 const maxErrorBodySize = 4096
 
+const (
+	RequiredActionVerifyEmail    string = "VERIFY_EMAIL"
+	RequiredActionUpdatePassword string = "UPDATE_PASSWORD"
+	UserDefaultPasswordType      string = "password"
+	UserDefaultPasswordValue     string = "password"
+)
+
 type AdminClient struct {
 	httpClient *http.Client
 	baseURL    string
 	realm      string
 }
 
-func NewAdminClient(httpClient *http.Client, baseURL, realm string) *AdminClient {
+var (
+	_ idp.Provider       = (*AdminClient)(nil)
+	_ dcr.TokenProvider  = (*AdminClient)(nil)
+	_ dcr.TokenRefresher = (*AdminClient)(nil)
+)
+
+func New(httpClient *http.Client, baseURL, realm string) *AdminClient {
 	return &AdminClient{
 		httpClient: httpClient,
 		baseURL:    strings.TrimSuffix(baseURL, "/"),
@@ -119,8 +132,8 @@ func (c *AdminClient) RefreshToken(ctx context.Context, clientID string) (string
 	return response.RegistrationAccessToken, nil
 }
 
-func (c *AdminClient) RegistrationEndpoint() string {
-	return fmt.Sprintf("%s/realms/%s/clients-registrations/openid-connect", c.baseURL, c.realm)
+func (c *AdminClient) RegistrationEndpoint(clientID string) string {
+	return fmt.Sprintf("%s/realms/%s/clients-registrations/openid-connect/%s", c.baseURL, c.realm, clientID)
 }
 
 func (c *AdminClient) TenantExists(ctx context.Context, tenantID string) (bool, error) {
@@ -164,7 +177,36 @@ func (c *AdminClient) UpdateTenant(ctx context.Context, _ string, config idp.Ten
 	return err
 }
 
-func (c *AdminClient) EnsureTenant(ctx context.Context, tenantName string) (created bool, err error) {
+func (c *AdminClient) EnsureTenant(ctx context.Context, tenantName string, registrationAllowed bool) (created bool, err error) {
+	// realmConfig := keycloak.RealmConfig{
+	// 	Realm:                       realmName,
+	// 	DisplayName:                 realmName,
+	// 	Enabled:                     true,
+	// 	LoginWithEmailAllowed:       true,
+	// 	RegistrationEmailAsUsername: true,
+	// 	RegistrationAllowed:         registrationAllowed,
+	// 	SSOSessionIdleTimeout:       s.cfg.IDP.AccessTokenLifespan,
+	// 	AccessTokenLifespan:         s.cfg.IDP.AccessTokenLifespan,
+	// }
+
+	// if s.cfg.IDP.SMTPServer != "" {
+	// 	smtpConfig := &keycloak.SMTPConfig{
+	// 		Host:     s.cfg.IDP.SMTPServer,
+	// 		Port:     fmt.Sprintf("%d", s.cfg.IDP.SMTPPort),
+	// 		From:     s.cfg.IDP.FromAddress,
+	// 		SSL:      s.cfg.IDP.SSL,
+	// 		StartTLS: s.cfg.IDP.StartTLS,
+	// 	}
+
+	// 	if s.cfg.IDP.SMTPUser != "" {
+	// 		smtpConfig.Auth = true
+	// 		smtpConfig.User = s.cfg.IDP.SMTPUser
+	// 		smtpConfig.Password = s.cfg.IDP.SMTPPassword
+	// 	}
+
+	// 	realmConfig.SMTPServer = smtpConfig
+	// }
+
 	return c.CreateOrUpdateRealm(ctx, RealmConfig{
 		Realm: tenantName,
 	})
@@ -246,7 +288,7 @@ func (c *AdminClient) DeleteRealm(ctx context.Context, realmName string) error {
 	return nil
 }
 
-func (c *AdminClient) GetClientByName(ctx context.Context, clientName string) (*ClientInfo, error) {
+func (c *AdminClient) GetClientByName(ctx context.Context, clientName string) (*idp.ClientInfo, error) {
 	clients, err := c.ListClients(ctx)
 	if err != nil {
 		return nil, err
@@ -276,7 +318,7 @@ func (c *AdminClient) resolveClientUUID(ctx context.Context, clientID string) (s
 	return "", fmt.Errorf("client with client_id %q not found", clientID)
 }
 
-func (c *AdminClient) ListClients(ctx context.Context) ([]ClientInfo, error) {
+func (c *AdminClient) ListClients(ctx context.Context) ([]idp.ClientInfo, error) {
 	url := fmt.Sprintf("%s/admin/realms/%s/clients", c.baseURL, c.realm)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -294,7 +336,7 @@ func (c *AdminClient) ListClients(ctx context.Context) ([]ClientInfo, error) {
 		return nil, readErrorResponse(resp, "get clients")
 	}
 
-	var clients []ClientInfo
+	var clients []idp.ClientInfo
 	if err := json.NewDecoder(resp.Body).Decode(&clients); err != nil {
 		return nil, fmt.Errorf("failed to parse clients response: %w", err)
 	}
@@ -355,7 +397,7 @@ type RoleInfo struct {
 	Name string `json:"name"`
 }
 
-func (c *AdminClient) CreateServiceAccountClient(ctx context.Context, config ServiceAccountClientConfig) (*ClientInfo, error) {
+func (c *AdminClient) CreateServiceAccountClient(ctx context.Context, config idp.ServiceAccountClientConfig) (*idp.ClientInfo, error) {
 	url := fmt.Sprintf("%s/admin/realms/%s/clients", c.baseURL, c.realm)
 
 	body, err := json.Marshal(config)
@@ -387,10 +429,10 @@ func (c *AdminClient) CreateServiceAccountClient(ctx context.Context, config Ser
 	parts := strings.Split(location, "/")
 	clientUUID := parts[len(parts)-1]
 
-	return &ClientInfo{
+	return &idp.ClientInfo{
 		ID:       clientUUID,
 		ClientID: config.ClientID,
-		Name:     config.Name,
+		// Name:     config.Name,
 	}, nil
 }
 
@@ -477,10 +519,10 @@ func (c *AdminClient) GetRealmRole(ctx context.Context, roleName string) (*RoleI
 	return &role, nil
 }
 
-func (c *AdminClient) AssignRealmRoleToUser(ctx context.Context, userID string, role RoleInfo) error {
+func (c *AdminClient) AssignRealmRoleToUser(ctx context.Context, userID string, role idp.RoleInfo) error {
 	url := fmt.Sprintf("%s/admin/realms/%s/users/%s/role-mappings/realm", c.baseURL, c.realm, userID)
 
-	body, err := json.Marshal([]RoleInfo{role})
+	body, err := json.Marshal([]idp.RoleInfo{role})
 	if err != nil {
 		return fmt.Errorf("failed to marshal role: %w", err)
 	}
@@ -506,7 +548,7 @@ func (c *AdminClient) AssignRealmRoleToUser(ctx context.Context, userID string, 
 
 func (c *AdminClient) RegisterClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
 	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
-	return client.Register(ctx, c.RegistrationEndpoint(), metadata)
+	return client.Register(ctx, c.RegistrationEndpoint(metadata.ClientID), metadata)
 }
 
 func (c *AdminClient) GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error) {
@@ -622,8 +664,50 @@ func (c *AdminClient) TokenEndpoint(tenantID string) string {
 	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", c.baseURL, c.realm)
 }
 
-var (
-	_ idp.Provider       = (*AdminClient)(nil)
-	_ dcr.TokenProvider  = (*AdminClient)(nil)
-	_ dcr.TokenRefresher = (*AdminClient)(nil)
-)
+func (c *AdminClient) CreateUser(ctx context.Context, tenantID string, email string) error {
+
+	// v := url.Values{
+	// 	"email":               {invite.Spec.Email},
+	// 	"max":                 {"1"},
+	// 	"briefRepresentation": {"true"},
+	// }
+	// newUser := KeycloakUser{
+	// 	Email:           invite.Spec.Email,
+	// 	RequiredActions: []string{RequiredActionUpdatePassword, RequiredActionVerifyEmail},
+	// 	Enabled:         true,
+	// }
+
+	// if s.setDefaultPassword {
+	// 	newUser.RequiredActions = []string{RequiredActionUpdatePassword}
+	// 	newUser.Credentials = []KeycloakCredential{
+	// 		{
+	// 			Type:      UserDefaultPasswordType,
+	// 			Value:     UserDefaultPasswordValue,
+	// 			Temporary: true,
+	// 		},
+	// 	}
+	// }
+
+	// queryParams := url.Values{
+	// 	"redirect_uri": {fmt.Sprintf("https://%s.%s/", realm, s.baseDomain)},
+	// 	"client_id":    {oidcClient.ClientID},
+	// }
+
+	// req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/admin/realms/%s/users/%s/execute-actions-email?%s", s.keycloakBaseURL, realm, newUser.ID, queryParams.Encode()), http.NoBody)
+	// if err != nil {
+	// 	return subroutines.OK(), err
+	// }
+
+	// res, err = s.keycloak.Do(req)
+	// if err != nil {
+	// 	log.Err(err).Msg("Failed to send invite email")
+	// 	return subroutines.OK(), err
+	// }
+	// defer res.Body.Close() //nolint:errcheck
+
+	// if res.StatusCode != http.StatusNoContent {
+	// 	return subroutines.OK(), fmt.Errorf("failed to send invite email: %s", res.Status)
+	// }
+
+	// log.Info().Str("email", invite.Spec.Email).Msg("User created and invite sent")
+}

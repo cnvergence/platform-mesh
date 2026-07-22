@@ -37,9 +37,9 @@ import (
 	"go.platform-mesh.io/security-operator/internal/idp/dcr"
 )
 
-// ManagementClient wraps the Auth0 Management API SDK and implements the
+// Provider wraps the Auth0 Management API SDK and implements the
 // dcr token interfaces for OIDC dynamic client registration.
-type ManagementClient struct {
+type Provider struct {
 	mgmt         *mgmtclient.Management
 	domain       string
 	oauth2Config clientcredentials.Config
@@ -48,14 +48,21 @@ type ManagementClient struct {
 	ts oauth2.TokenSource
 }
 
-// NewManagementClient creates a client for the Auth0 tenant at domain
-func NewManagementClient(domain, clientID, clientSecret string, opts ...option.RequestOption) *ManagementClient {
+var (
+	_ dcr.TokenProvider  = (*Provider)(nil)
+	_ dcr.TokenRefresher = (*Provider)(nil)
+	// _ idp.Provider       = (*Provider)(nil)
+	_ oauth2.TokenSource = (*Provider)(nil)
+)
+
+// New creates a client for the Auth0 tenant at domain
+func New(domain, clientID, clientSecret string, opts ...option.RequestOption) *Provider {
 	domain = strings.TrimSuffix(domain, "/")
 	if !strings.Contains(domain, "://") {
 		domain = "https://" + domain
 	}
 
-	c := &ManagementClient{
+	c := &Provider{
 		domain: domain,
 		oauth2Config: clientcredentials.Config{
 			ClientID:     clientID,
@@ -78,22 +85,22 @@ func NewManagementClient(domain, clientID, clientSecret string, opts ...option.R
 	return c
 }
 
-func (c *ManagementClient) Management() *mgmtclient.Management {
+func (c *Provider) Management() *mgmtclient.Management {
 	return c.mgmt
 }
 
-func (c *ManagementClient) RegistrationEndpoint() string {
+func (c *Provider) RegistrationEndpoint() string {
 	return c.domain + "/oidc/register"
 }
 
-func (c *ManagementClient) Token() (*oauth2.Token, error) {
+func (c *Provider) Token() (*oauth2.Token, error) {
 	c.mu.Lock()
 	ts := c.ts
 	c.mu.Unlock()
 	return ts.Token()
 }
 
-func (c *ManagementClient) TokenForRegistration(ctx context.Context) (string, error) {
+func (c *Provider) TokenForRegistration(ctx context.Context) (string, error) {
 	c.mu.Lock()
 	ts := c.ts
 	c.mu.Unlock()
@@ -105,7 +112,7 @@ func (c *ManagementClient) TokenForRegistration(ctx context.Context) (string, er
 	return token.AccessToken, nil
 }
 
-func (c *ManagementClient) RefreshToken(ctx context.Context, _ string) (string, error) {
+func (c *Provider) RefreshToken(ctx context.Context, _ string) (string, error) {
 	c.mu.Lock()
 	c.ts = c.oauth2Config.TokenSource(context.Background())
 	ts := c.ts
@@ -138,7 +145,7 @@ type ClientInfo struct {
 	Secret   string
 }
 
-func (c *ManagementClient) OrganizationExists(ctx context.Context, name string) (bool, error) {
+func (c *Provider) OrganizationExists(ctx context.Context, name string) (bool, error) {
 	org, err := c.GetOrganizationByName(ctx, name)
 	if err != nil {
 		return false, err
@@ -146,7 +153,7 @@ func (c *ManagementClient) OrganizationExists(ctx context.Context, name string) 
 	return org != nil, nil
 }
 
-func (c *ManagementClient) GetOrganizationByName(ctx context.Context, name string) (*OrganizationInfo, error) {
+func (c *Provider) GetOrganizationByName(ctx context.Context, name string) (*OrganizationInfo, error) {
 	org, err := c.mgmt.Organizations.GetByName(ctx, name)
 	if err != nil {
 		if isStatus(err, http.StatusNotFound) {
@@ -162,7 +169,7 @@ func (c *ManagementClient) GetOrganizationByName(ctx context.Context, name strin
 	}, nil
 }
 
-func (c *ManagementClient) CreateOrUpdateOrganization(ctx context.Context, config OrganizationConfig) (created bool, err error) {
+func (c *Provider) CreateOrUpdateOrganization(ctx context.Context, config OrganizationConfig) (created bool, err error) {
 	createReq := &management.CreateOrganizationRequestContent{
 		Name: config.Name,
 	}
@@ -185,7 +192,7 @@ func (c *ManagementClient) CreateOrUpdateOrganization(ctx context.Context, confi
 	return false, c.updateOrganization(ctx, config)
 }
 
-func (c *ManagementClient) updateOrganization(ctx context.Context, config OrganizationConfig) error {
+func (c *Provider) updateOrganization(ctx context.Context, config OrganizationConfig) error {
 	org, err := c.GetOrganizationByName(ctx, config.Name)
 	if err != nil {
 		return err
@@ -210,7 +217,7 @@ func (c *ManagementClient) updateOrganization(ctx context.Context, config Organi
 	return nil
 }
 
-func (c *ManagementClient) DeleteOrganization(ctx context.Context, name string) error {
+func (c *Provider) DeleteOrganization(ctx context.Context, name string) error {
 	org, err := c.GetOrganizationByName(ctx, name)
 	if err != nil {
 		return err
@@ -226,7 +233,7 @@ func (c *ManagementClient) DeleteOrganization(ctx context.Context, name string) 
 	return nil
 }
 
-func (c *ManagementClient) ListClients(ctx context.Context) ([]ClientInfo, error) {
+func (c *Provider) ListClients(ctx context.Context) ([]ClientInfo, error) {
 	fields := "client_id,name"
 	includeFields := true
 
@@ -254,7 +261,7 @@ func (c *ManagementClient) ListClients(ctx context.Context) ([]ClientInfo, error
 	return clients, nil
 }
 
-func (c *ManagementClient) GetClientByName(ctx context.Context, clientName string) (*ClientInfo, error) {
+func (c *Provider) GetClientByName(ctx context.Context, clientName string) (*ClientInfo, error) {
 	clients, err := c.ListClients(ctx)
 	if err != nil {
 		return nil, err
@@ -269,7 +276,7 @@ func (c *ManagementClient) GetClientByName(ctx context.Context, clientName strin
 	return nil, nil
 }
 
-func (c *ManagementClient) GetClientSecret(ctx context.Context, clientID string) (string, error) {
+func (c *Provider) GetClientSecret(ctx context.Context, clientID string) (string, error) {
 	fields := "client_secret"
 	includeFields := true
 
@@ -305,9 +312,3 @@ func deref(s *string) string {
 	}
 	return *s
 }
-
-var (
-	_ dcr.TokenProvider  = (*ManagementClient)(nil)
-	_ dcr.TokenRefresher = (*ManagementClient)(nil)
-	_ oauth2.TokenSource = (*ManagementClient)(nil)
-)

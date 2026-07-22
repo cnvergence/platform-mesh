@@ -20,19 +20,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"slices"
 	"time"
-
-	"github.com/coreos/go-oidc"
-	"golang.org/x/oauth2/clientcredentials"
 
 	pmcorev1alpha1 "go.platform-mesh.io/apis/core/v1alpha1"
 	"go.platform-mesh.io/golang-commons/logger"
 	iclient "go.platform-mesh.io/security-operator/internal/client"
 	"go.platform-mesh.io/security-operator/internal/config"
+	"go.platform-mesh.io/security-operator/internal/idp"
 	"go.platform-mesh.io/security-operator/internal/idp/dcr"
-	"go.platform-mesh.io/security-operator/internal/idp/keycloak"
+	"go.platform-mesh.io/security-operator/internal/idp/factory"
 	"go.platform-mesh.io/subroutines"
 
 	corev1 "k8s.io/api/core/v1"
@@ -64,51 +61,21 @@ func pendingIfClusterNotReady(ctx context.Context, err error) (subroutines.Resul
 }
 
 type subroutine struct {
-	keycloakBaseURL string
-	adminClient     *http.Client
 	mgr             mcmanager.Manager
 	cfg             *config.Config
 	kcpClientGetter iclient.KCPClientGetter
 }
 
 func New(ctx context.Context, cfg *config.Config, mgr mcmanager.Manager, kcpClientGetter iclient.KCPClientGetter) (*subroutine, error) {
-	issuer := fmt.Sprintf("%s/realms/master", cfg.Keycloak.BaseURL)
-	provider, err := oidc.NewProvider(ctx, issuer)
-	if err != nil {
-		return nil, err
-	}
-
-	cCfg := clientcredentials.Config{
-		ClientID:     cfg.Keycloak.ClientID,
-		ClientSecret: cfg.Keycloak.ClientSecret,
-		TokenURL:     provider.Endpoint().TokenURL,
-	}
-
-	adminClient := cCfg.Client(ctx)
-
 	return &subroutine{
-		keycloakBaseURL: cfg.Keycloak.BaseURL,
-		adminClient:     adminClient,
 		mgr:             mgr,
 		cfg:             cfg,
 		kcpClientGetter: kcpClientGetter,
 	}, nil
 }
 
-func (s *subroutine) newOIDCClient(realmName string) (dcr.Client, *keycloak.AdminClient) {
-	adminClient := keycloak.NewAdminClient(s.adminClient, s.keycloakBaseURL, realmName)
-
-	httpClient := &http.Client{
-		Timeout:   time.Duration(s.cfg.HttpClientTimeoutSeconds) * time.Second,
-		Transport: dcr.NewRetryTransport(nil, adminClient),
-	}
-
-	oidcClient := dcr.NewClient(
-		dcr.WithHTTPClient(httpClient),
-		dcr.WithTokenProvider(adminClient),
-	)
-
-	return oidcClient, adminClient
+func (s *subroutine) newIDProvider(realmName string) (idp.Provider, error) {
+	return factory.Create2LeggedProvider(s.cfg, realmName)
 }
 
 func (s *subroutine) Finalize(ctx context.Context, obj ctrlruntimeclient.Object) (subroutines.Result, error) {
@@ -124,7 +91,10 @@ func (s *subroutine) finalize(ctx context.Context, obj ctrlruntimeclient.Object)
 	log := logger.LoadLoggerFromContext(ctx)
 	realmName := idpToDelete.Name
 
-	oidcClient, adminClient := s.newOIDCClient(realmName)
+	provider, err := s.newIDProvider(realmName)
+	if err != nil {
+		return subroutines.OK(), fmt.Errorf("failed to create ID provider: %w", err)
+	}
 
 	for _, clientToDelete := range idpToDelete.Spec.Clients {
 		registrationAccessToken, err := s.readRegistrationAccessToken(ctx, clientToDelete.SecretRef)
@@ -148,7 +118,7 @@ func (s *subroutine) finalize(ctx context.Context, obj ctrlruntimeclient.Object)
 			continue
 		}
 
-		err = oidcClient.Delete(ctx, clientIDToDelete, registrationClientURIToDelete, registrationAccessToken)
+		err = provider.DeleteClient(ctx, clientIDToDelete, registrationClientURIToDelete, registrationAccessToken)
 		if err != nil && !dcr.IsNotFound(err) {
 			return subroutines.OK(), fmt.Errorf("failed to delete oidc client: %w", err)
 		}
@@ -169,7 +139,7 @@ func (s *subroutine) finalize(ctx context.Context, obj ctrlruntimeclient.Object)
 		}
 	}
 
-	if err := adminClient.DeleteRealm(ctx, realmName); err != nil {
+	if err := provider.DeleteTenant(ctx, realmName); err != nil {
 		return subroutines.OK(), fmt.Errorf("failed to delete realm: %w", err)
 	}
 
@@ -180,7 +150,9 @@ func (s *subroutine) Finalizers(_ ctrlruntimeclient.Object) []string {
 	return []string{"core.platform-mesh.io/idp-finalizer"}
 }
 
-func (s *subroutine) GetName() string { return "IdentityProviderConfiguration" }
+func (s *subroutine) GetName() string {
+	return "IdentityProviderConfiguration"
+}
 
 func (s *subroutine) Process(ctx context.Context, obj ctrlruntimeclient.Object) (subroutines.Result, error) {
 	result, err := s.process(ctx, obj)
@@ -201,13 +173,16 @@ func (s *subroutine) process(ctx context.Context, obj ctrlruntimeclient.Object) 
 	kcpClient := cl.GetClient()
 
 	realmName := idpConfig.Name
-	oidcClient, adminClient := s.newOIDCClient(realmName)
+	provider, err := s.newIDProvider(realmName)
+	if err != nil {
+		return subroutines.OK(), fmt.Errorf("failed to create ID provider: %w", err)
+	}
 
-	if err := s.ensureRealm(ctx, adminClient, realmName, idpConfig.Spec.RegistrationAllowed, log); err != nil {
+	if err := s.ensureRealm(ctx, provider, realmName, idpConfig.Spec.RegistrationAllowed, log); err != nil {
 		return subroutines.OK(), err
 	}
 
-	if err := s.deleteRemovedClients(ctx, idpConfig, oidcClient, log); err != nil {
+	if err := s.deleteRemovedClients(ctx, idpConfig, provider, log); err != nil {
 		return subroutines.OK(), err
 	}
 
@@ -215,7 +190,7 @@ func (s *subroutine) process(ctx context.Context, obj ctrlruntimeclient.Object) 
 	for i := range idpConfig.Spec.Clients {
 		clientConfig := &idpConfig.Spec.Clients[i]
 
-		clientInfo, err := s.registerOrUpdateClient(ctx, idpConfig, clientConfig, realmName, oidcClient, adminClient)
+		clientInfo, err := s.ensureClient(ctx, idpConfig, clientConfig, realmName, provider)
 		if err != nil {
 			return subroutines.OK(), fmt.Errorf("failed to process client %s: %w", clientConfig.ClientName, err)
 		}
@@ -241,37 +216,8 @@ func (s *subroutine) process(ctx context.Context, obj ctrlruntimeclient.Object) 
 	return subroutines.OK(), nil
 }
 
-func (s *subroutine) ensureRealm(ctx context.Context, adminClient *keycloak.AdminClient, realmName string, registrationAllowed bool, log *logger.Logger) error {
-	realmConfig := keycloak.RealmConfig{
-		Realm:                       realmName,
-		DisplayName:                 realmName,
-		Enabled:                     true,
-		LoginWithEmailAllowed:       true,
-		RegistrationEmailAsUsername: true,
-		RegistrationAllowed:         registrationAllowed,
-		SSOSessionIdleTimeout:       s.cfg.IDP.AccessTokenLifespan,
-		AccessTokenLifespan:         s.cfg.IDP.AccessTokenLifespan,
-	}
-
-	if s.cfg.IDP.SMTPServer != "" {
-		smtpConfig := &keycloak.SMTPConfig{
-			Host:     s.cfg.IDP.SMTPServer,
-			Port:     fmt.Sprintf("%d", s.cfg.IDP.SMTPPort),
-			From:     s.cfg.IDP.FromAddress,
-			SSL:      s.cfg.IDP.SSL,
-			StartTLS: s.cfg.IDP.StartTLS,
-		}
-
-		if s.cfg.IDP.SMTPUser != "" {
-			smtpConfig.Auth = true
-			smtpConfig.User = s.cfg.IDP.SMTPUser
-			smtpConfig.Password = s.cfg.IDP.SMTPPassword
-		}
-
-		realmConfig.SMTPServer = smtpConfig
-	}
-
-	created, err := adminClient.CreateOrUpdateRealm(ctx, realmConfig)
+func (s *subroutine) ensureRealm(ctx context.Context, provider idp.Provider, realmName string, registrationAllowed bool, log *logger.Logger) error {
+	created, err := provider.EnsureTenant(ctx, realmName, registrationAllowed)
 	if err != nil {
 		return fmt.Errorf("failed to create or update realm: %w", err)
 	}
@@ -285,7 +231,7 @@ func (s *subroutine) ensureRealm(ctx context.Context, adminClient *keycloak.Admi
 	return nil
 }
 
-func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcorev1alpha1.IdentityProviderConfiguration, oidcClient dcr.Client, log *logger.Logger) error {
+func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcorev1alpha1.IdentityProviderConfiguration, provider idp.Provider, log *logger.Logger) error {
 	for clientName, managedClient := range idpConfig.Status.ManagedClients {
 		exists := slices.ContainsFunc(idpConfig.Spec.Clients,
 			func(c pmcorev1alpha1.IdentityProviderClientConfig) bool {
@@ -307,7 +253,7 @@ func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcore
 			return fmt.Errorf("failed to get registration access token from secret: %w", err)
 		}
 
-		if err := oidcClient.Delete(ctx, managedClient.ClientID, managedClient.RegistrationClientURI, registrationAccessToken); err != nil && !dcr.IsNotFound(err) {
+		if err := provider.DeleteClient(ctx, managedClient.ClientID, managedClient.RegistrationClientURI, registrationAccessToken); err != nil && !dcr.IsNotFound(err) {
 			return fmt.Errorf("failed to delete client %s: %w", clientName, err)
 		}
 
@@ -329,8 +275,8 @@ func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcore
 	return nil
 }
 
-func (s *subroutine) registerOrUpdateClient(ctx context.Context, ipc *pmcorev1alpha1.IdentityProviderConfiguration, clientConfig *pmcorev1alpha1.IdentityProviderClientConfig, realmName string, oidcClient dcr.Client, adminClient *keycloak.AdminClient) (dcr.ClientInformation, error) {
-	existingClient, err := adminClient.GetClientByName(ctx, clientConfig.ClientName)
+func (s *subroutine) ensureClient(ctx context.Context, ipc *pmcorev1alpha1.IdentityProviderConfiguration, clientConfig *pmcorev1alpha1.IdentityProviderClientConfig, realmName string, provider idp.Provider) (dcr.ClientInformation, error) {
+	existingClient, err := provider.GetClientByName(ctx, clientConfig.ClientName)
 	if err != nil {
 		return dcr.ClientInformation{}, fmt.Errorf("failed to check if client exists: %w", err)
 	}
@@ -349,7 +295,7 @@ func (s *subroutine) registerOrUpdateClient(ctx context.Context, ipc *pmcorev1al
 	}
 
 	if existingClient == nil {
-		return oidcClient.Register(ctx, adminClient.RegistrationEndpoint(), metadata)
+		return provider.RegisterClient(ctx, metadata)
 	}
 
 	// Client exists, update it
@@ -360,7 +306,7 @@ func (s *subroutine) registerOrUpdateClient(ctx context.Context, ipc *pmcorev1al
 
 	registrationClientURI := ipc.Status.ManagedClients[clientConfig.ClientName].RegistrationClientURI
 	if registrationClientURI == "" {
-		registrationClientURI = fmt.Sprintf("%s/realms/%s/clients-registrations/openid-connect/%s", s.keycloakBaseURL, realmName, existingClient.ClientID)
+		registrationClientURI = provider.RegistrationEndpoint(existingClient.ClientID)
 	}
 
 	metadata.ClientID = ipc.Status.ManagedClients[clientConfig.ClientName].ClientID
@@ -368,7 +314,7 @@ func (s *subroutine) registerOrUpdateClient(ctx context.Context, ipc *pmcorev1al
 		metadata.ClientID = existingClient.ClientID
 	}
 
-	return oidcClient.Update(ctx, registrationClientURI, registrationAccessToken, metadata)
+	return provider.UpdateClient(ctx, registrationClientURI, registrationAccessToken, metadata)
 }
 
 func (s *subroutine) readRegistrationAccessToken(ctx context.Context, secretRef corev1.SecretReference) (string, error) {
