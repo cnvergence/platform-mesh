@@ -431,7 +431,7 @@ func TestManagementClient_CreateTokenProvider(t *testing.T) {
 	}
 }
 
-func TestManagementClient_RefreshRegistrationToken(t *testing.T) {
+func TestManagementClient_CreateTokenRefresher(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
@@ -454,7 +454,7 @@ func TestManagementClient_RefreshRegistrationToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			token, err := testClient(t, srv).RefreshRegistrationToken(context.Background(), "", "")
+			token, err := testClient(t, srv).CreateTokenRefresher("")(context.Background(), "")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -609,7 +609,7 @@ func TestManagementClient_ListClients(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
-		wantClients []idp.ClientInfo
+		wantClients []idp.Client
 		wantErr     bool
 	}{
 		{
@@ -629,7 +629,7 @@ func TestManagementClient_ListClients(t *testing.T) {
 					json.NewEncoder(w).Encode(map[string]any{"clients": []map[string]any{}}) //nolint:errcheck
 				})
 			},
-			wantClients: []idp.ClientInfo{
+			wantClients: []idp.Client{
 				{ID: "c1", ClientID: "c1", Name: "client-one"},
 				{ID: "c2", ClientID: "c2", Name: "client-two"},
 			},
@@ -652,7 +652,7 @@ func TestManagementClient_ListClients(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			clients, err := testClient(t, srv).ListClients(context.Background())
+			clients, err := testClient(t, srv).ListClients(context.Background(), "my-org")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -677,13 +677,13 @@ func TestManagementClient_GetClientByName(t *testing.T) {
 	tests := []struct {
 		name       string
 		clientName string
-		wantClient *idp.ClientInfo
+		wantClient *idp.Client
 		wantErr    bool
 	}{
 		{
 			name:       "client found",
 			clientName: "client-one",
-			wantClient: &idp.ClientInfo{ID: "c1", ClientID: "c1", Name: "client-one"},
+			wantClient: &idp.Client{ID: "c1", ClientID: "c1", Name: "client-one"},
 		},
 		{
 			name:       "client not found returns nil",
@@ -697,7 +697,7 @@ func TestManagementClient_GetClientByName(t *testing.T) {
 			srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 				listClients(w, &call)
 			})
-			client, err := testClient(t, srv).GetClientByName(context.Background(), tt.clientName)
+			client, err := testClient(t, srv).GetClientByName(context.Background(), "my-org", tt.clientName)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -724,23 +724,23 @@ func TestManagementClient_GetClientByID(t *testing.T) {
 		srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 			listClients(w, &call)
 		})
-		client, err := testClient(t, srv).GetClientByID(context.Background(), "c1")
+		client, err := testClient(t, srv).GetClientByID(context.Background(), "my-org", "c1")
 		require.NoError(t, err)
-		assert.Equal(t, &idp.ClientInfo{ID: "c1", ClientID: "c1", Name: "client-one"}, client)
+		assert.Equal(t, &idp.Client{ID: "c1", ClientID: "c1", Name: "client-one"}, client)
 	})
 	t.Run("client not found returns error", func(t *testing.T) {
 		call := 0
 		srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 			listClients(w, &call)
 		})
-		_, err := testClient(t, srv).GetClientByID(context.Background(), "missing")
+		_, err := testClient(t, srv).GetClientByID(context.Background(), "my-org", "missing")
 		require.Error(t, err)
 	})
 	t.Run("list error", func(t *testing.T) {
 		srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 		})
-		_, err := testClient(t, srv).GetClientByID(context.Background(), "c1")
+		_, err := testClient(t, srv).GetClientByID(context.Background(), "my-org", "c1")
 		require.Error(t, err)
 	})
 }
@@ -750,7 +750,7 @@ func TestManagementClient_CreateServiceAccountClient(t *testing.T) {
 		name        string
 		config      idp.ServiceAccountClientConfig
 		setupServer func(t *testing.T) *httptest.Server
-		wantClient  *idp.ClientInfo
+		wantClient  *idp.Client
 		wantErr     bool
 	}{
 		{
@@ -765,7 +765,7 @@ func TestManagementClient_CreateServiceAccountClient(t *testing.T) {
 					})
 				})
 			},
-			wantClient: &idp.ClientInfo{ID: "svc", ClientID: "svc", Name: "svc-account", Secret: "topsecret"},
+			wantClient: &idp.Client{ID: "svc", ClientID: "svc", Name: "svc-account", Secret: "topsecret"},
 		},
 		{
 			name:   "name falls back to client id",
@@ -777,7 +777,7 @@ func TestManagementClient_CreateServiceAccountClient(t *testing.T) {
 					})
 				})
 			},
-			wantClient: &idp.ClientInfo{ID: "svc", ClientID: "svc", Name: "svc", Secret: "topsecret"},
+			wantClient: &idp.Client{ID: "svc", ClientID: "svc", Name: "svc", Secret: "topsecret"},
 		},
 		{
 			name:   "create error",
@@ -793,7 +793,7 @@ func TestManagementClient_CreateServiceAccountClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			client, err := testClient(t, srv).CreateServiceAccountClient(context.Background(), tt.config)
+			client, err := testClient(t, srv).CreateServiceAccountClient(context.Background(), "my-org", tt.config)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -836,7 +836,7 @@ func TestManagementClient_GetClientSecret(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			secret, err := testClient(t, srv).GetClientSecret(context.Background(), "c1")
+			secret, err := testClient(t, srv).GetClientSecret(context.Background(), "my-org", "c1")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -849,7 +849,7 @@ func TestManagementClient_GetClientSecret(t *testing.T) {
 
 func TestManagementClient_GetServiceAccountUser(t *testing.T) {
 	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {})
-	_, err := testClient(t, srv).GetServiceAccountUser(context.Background(), "c1")
+	_, err := testClient(t, srv).GetServiceAccountUser(context.Background(), "my-org", "c1")
 	require.Error(t, err)
 }
 
@@ -857,7 +857,7 @@ func TestManagementClient_GetOrganizationRole(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
-		wantRole    *idp.RoleInfo
+		wantRole    *idp.Role
 		wantErr     bool
 	}{
 		{
@@ -876,7 +876,7 @@ func TestManagementClient_GetOrganizationRole(t *testing.T) {
 					json.NewEncoder(w).Encode(map[string]any{"roles": []map[string]any{}}) //nolint:errcheck
 				})
 			},
-			wantRole: &idp.RoleInfo{ID: "r1", Name: "admin"},
+			wantRole: &idp.Role{ID: "r1", Name: "admin"},
 		},
 		{
 			name: "role not found returns nil",
@@ -900,7 +900,7 @@ func TestManagementClient_GetOrganizationRole(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			role, err := testClient(t, srv).GetOrganizationRole(context.Background(), "admin")
+			role, err := testClient(t, srv).GetOrganizationRole(context.Background(), "my-org", "admin")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -940,7 +940,7 @@ func TestManagementClient_AssignRoleToUser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			err := testClient(t, srv).AssignRoleToUser(context.Background(), "auth0|123", idp.RoleInfo{ID: "r1", Name: "admin"})
+			err := testClient(t, srv).AssignRoleToUser(context.Background(), "my-org", "auth0|123", idp.Role{ID: "r1", Name: "admin"})
 			if tt.wantErr {
 				require.Error(t, err)
 				return

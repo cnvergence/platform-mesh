@@ -110,23 +110,23 @@ func (c *ManagementClient) dcrClient() dcr.Client {
 	return dcr.NewClient(dcr.WithTokenProvider(c.CreateTokenProvider("")))
 }
 
-func (c *ManagementClient) RegistrationEndpoint(_ string) string {
+func (c *ManagementClient) RegistrationEndpoint(orgID string, clientID string) string {
 	return c.baseURL + "/oidc/register"
 }
 
-func (c *ManagementClient) CreateClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
-	return c.dcrClient().Register(ctx, c.RegistrationEndpoint(metadata.ClientID), metadata)
+func (c *ManagementClient) CreateClient(ctx context.Context, orgID string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
+	return c.dcrClient().Register(ctx, c.RegistrationEndpoint(orgID, metadata.ClientID), metadata)
 }
 
-func (c *ManagementClient) GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error) {
+func (c *ManagementClient) GetClient(ctx context.Context, orgID string, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error) {
 	return c.dcrClient().Read(ctx, clientID, registrationURI, registrationToken)
 }
 
-func (c *ManagementClient) UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
+func (c *ManagementClient) UpdateClient(ctx context.Context, orgID string, registrationURI, registrationToken string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
 	return c.dcrClient().Update(ctx, registrationURI, registrationToken, metadata)
 }
 
-func (c *ManagementClient) DeleteClient(ctx context.Context, clientID, registrationURI, registrationToken string) error {
+func (c *ManagementClient) DeleteClient(ctx context.Context, orgID string, clientID, registrationURI, registrationToken string) error {
 	return c.dcrClient().Delete(ctx, clientID, registrationURI, registrationToken)
 }
 
@@ -207,17 +207,19 @@ func (c *ManagementClient) getOrganizationByName(ctx context.Context, name strin
 	return org, nil
 }
 
-func (c *ManagementClient) RefreshRegistrationToken(ctx context.Context, orgID, clientID string) (string, error) {
-	c.mu.Lock()
-	c.ts = c.oauth2Config.TokenSource(ctx)
-	ts := c.ts
-	c.mu.Unlock()
+func (c *ManagementClient) CreateTokenRefresher(orgID string) dcr.TokenRefresherFunc {
+	return func(ctx context.Context, clientID string) (newToken string, err error) {
+		c.mu.Lock()
+		c.ts = c.oauth2Config.TokenSource(ctx)
+		ts := c.ts
+		c.mu.Unlock()
 
-	token, err := ts.Token()
-	if err != nil {
-		return "", fmt.Errorf("failed to refresh management token: %w", err)
+		token, err := ts.Token()
+		if err != nil {
+			return "", fmt.Errorf("failed to refresh management token: %w", err)
+		}
+		return token.AccessToken, nil
 	}
-	return token.AccessToken, nil
 }
 
 func (c *ManagementClient) GetUserByEmail(ctx context.Context, orgID, email string) (*idp.User, error) {
@@ -263,16 +265,16 @@ func (c *ManagementClient) CreateUser(ctx context.Context, orgID string, clientI
 	return nil
 }
 
-func (c *ManagementClient) ListClients(ctx context.Context) ([]idp.ClientInfo, error) {
+func (c *ManagementClient) ListClients(ctx context.Context, orgID string) ([]idp.Client, error) {
 	page, err := c.mgmt.Clients.List(ctx, &management.ListClientsRequestParameters{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list clients: %w", err)
 	}
 
-	clients := make([]idp.ClientInfo, 0)
+	clients := make([]idp.Client, 0)
 	iter := page.Iterator()
 	for iter.Next(ctx) {
-		clients = append(clients, toClientInfo(iter.Current()))
+		clients = append(clients, toClient(iter.Current()))
 	}
 	if err := iter.Err(); err != nil {
 		return nil, fmt.Errorf("failed to list clients: %w", err)
@@ -281,14 +283,14 @@ func (c *ManagementClient) ListClients(ctx context.Context) ([]idp.ClientInfo, e
 	return clients, nil
 }
 
-func (c *ManagementClient) GetClientByName(ctx context.Context, clientName string) (*idp.ClientInfo, error) {
-	return c.findClient(ctx, func(client idp.ClientInfo) bool {
+func (c *ManagementClient) GetClientByName(ctx context.Context, orgID string, clientName string) (*idp.Client, error) {
+	return c.findClient(ctx, orgID, func(client idp.Client) bool {
 		return client.Name == clientName
 	})
 }
 
-func (c *ManagementClient) GetClientByID(ctx context.Context, clientID string) (*idp.ClientInfo, error) {
-	client, err := c.findClient(ctx, func(client idp.ClientInfo) bool {
+func (c *ManagementClient) GetClientByID(ctx context.Context, orgID string, clientID string) (*idp.Client, error) {
+	client, err := c.findClient(ctx, orgID, func(client idp.Client) bool {
 		return client.ClientID == clientID
 	})
 	if err != nil {
@@ -300,8 +302,8 @@ func (c *ManagementClient) GetClientByID(ctx context.Context, clientID string) (
 	return client, nil
 }
 
-func (c *ManagementClient) findClient(ctx context.Context, pred func(idp.ClientInfo) bool) (*idp.ClientInfo, error) {
-	clients, err := c.ListClients(ctx)
+func (c *ManagementClient) findClient(ctx context.Context, orgID string, pred func(idp.Client) bool) (*idp.Client, error) {
+	clients, err := c.ListClients(ctx, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +315,7 @@ func (c *ManagementClient) findClient(ctx context.Context, pred func(idp.ClientI
 	return nil, nil
 }
 
-func (c *ManagementClient) CreateServiceAccountClient(ctx context.Context, config idp.ServiceAccountClientConfig) (*idp.ClientInfo, error) {
+func (c *ManagementClient) CreateServiceAccountClient(ctx context.Context, orgID string, config idp.ServiceAccountClientConfig) (*idp.Client, error) {
 	name := config.Name
 	if name == "" {
 		name = config.ClientID
@@ -329,7 +331,7 @@ func (c *ManagementClient) CreateServiceAccountClient(ctx context.Context, confi
 		return nil, fmt.Errorf("failed to create service account client %q: %w", name, err)
 	}
 
-	return &idp.ClientInfo{
+	return &idp.Client{
 		ID:       deref(resp.ClientID),
 		ClientID: deref(resp.ClientID),
 		Name:     deref(resp.Name),
@@ -337,7 +339,7 @@ func (c *ManagementClient) CreateServiceAccountClient(ctx context.Context, confi
 	}, nil
 }
 
-func (c *ManagementClient) GetClientSecret(ctx context.Context, clientID string) (string, error) {
+func (c *ManagementClient) GetClientSecret(ctx context.Context, orgID string, clientID string) (string, error) {
 	client, err := c.mgmt.Clients.Get(ctx, clientID, &management.GetClientRequestParameters{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get client %q: %w", clientID, err)
@@ -345,11 +347,11 @@ func (c *ManagementClient) GetClientSecret(ctx context.Context, clientID string)
 	return deref(client.ClientSecret), nil
 }
 
-func (c *ManagementClient) GetServiceAccountUser(ctx context.Context, clientID string) (*idp.UserInfo, error) {
+func (c *ManagementClient) GetServiceAccountUser(ctx context.Context, orgID string, clientID string) (*idp.User, error) {
 	return nil, fmt.Errorf("service account users are not supported by the Auth0 provider")
 }
 
-func (c *ManagementClient) GetOrganizationRole(ctx context.Context, roleName string) (*idp.RoleInfo, error) {
+func (c *ManagementClient) GetOrganizationRole(ctx context.Context, orgID string, roleName string) (*idp.Role, error) {
 	page, err := c.mgmt.Roles.List(ctx, &management.ListRolesRequestParameters{
 		NameFilter: &roleName,
 	})
@@ -361,7 +363,7 @@ func (c *ManagementClient) GetOrganizationRole(ctx context.Context, roleName str
 	for iter.Next(ctx) {
 		role := iter.Current()
 		if deref(role.Name) == roleName {
-			return &idp.RoleInfo{ID: deref(role.ID), Name: deref(role.Name)}, nil
+			return &idp.Role{ID: deref(role.ID), Name: deref(role.Name)}, nil
 		}
 	}
 	if err := iter.Err(); err != nil {
@@ -371,11 +373,11 @@ func (c *ManagementClient) GetOrganizationRole(ctx context.Context, roleName str
 	return nil, nil
 }
 
-func (c *ManagementClient) AssignRoleToUser(ctx context.Context, serviceAccountUserID string, role idp.RoleInfo) error {
+func (c *ManagementClient) AssignRoleToUser(ctx context.Context, orgID string, serviceAccountUserID string, adminRole idp.Role) error {
 	if err := c.mgmt.Users.Roles.Assign(ctx, serviceAccountUserID, &management.AssignUserRolesRequestContent{
-		Roles: []string{role.ID},
+		Roles: []string{adminRole.ID},
 	}); err != nil {
-		return fmt.Errorf("failed to assign role %q to user %q: %w", role.Name, serviceAccountUserID, err)
+		return fmt.Errorf("failed to assign role %q to user %q: %w", adminRole.Name, serviceAccountUserID, err)
 	}
 	return nil
 }
@@ -398,14 +400,15 @@ func (c *ManagementClient) TokenEndpoint(_ string) string {
 
 func toUser(u *management.UserResponseSchema) *idp.User {
 	return &idp.User{
-		ID:      deref(u.UserID),
-		Email:   deref(u.Email),
-		Enabled: u.Blocked == nil || !*u.Blocked,
+		ID:       deref(u.UserID),
+		Username: deref(u.Username),
+		Email:    deref(u.Email),
+		Enabled:  u.Blocked == nil || !*u.Blocked,
 	}
 }
 
-func toClientInfo(cl *management.Client) idp.ClientInfo {
-	return idp.ClientInfo{
+func toClient(cl *management.Client) idp.Client {
+	return idp.Client{
 		ID:       deref(cl.ClientID),
 		ClientID: deref(cl.ClientID),
 		Name:     deref(cl.Name),
