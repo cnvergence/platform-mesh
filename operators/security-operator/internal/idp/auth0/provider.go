@@ -282,6 +282,7 @@ func deref(s *string) string {
 	return *s
 }
 
+//  dcr.TokenRefresher is not implemented and not needed. Auth0 never builds a RetryTransport, so nothing consumes RefreshToken(ctx, clientID)
 var (
 	_ idp.Provider       = (*ManagementClient)(nil)
 	_ oauth2.TokenSource = managementTokenSource{}
