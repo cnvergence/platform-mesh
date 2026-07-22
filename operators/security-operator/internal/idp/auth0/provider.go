@@ -35,6 +35,14 @@ import (
 	"go.platform-mesh.io/security-operator/internal/idp/dcr"
 )
 
+const defaultUserConnection = "Username-Password-Authentication"
+
+// dcr.TokenRefresher is not implemented and not needed. Auth0 never builds a RetryTransport, so nothing consumes RefreshToken(ctx, clientID)
+var (
+	_ idp.Provider       = (*ManagementClient)(nil)
+	_ oauth2.TokenSource = managementTokenSource{}
+)
+
 type ManagementClient struct {
 	mgmt         *mgmtclient.Management
 	baseURL      string
@@ -88,20 +96,26 @@ func (s managementTokenSource) Token() (*oauth2.Token, error) {
 	return s.c.token()
 }
 
-type registrationTokenProvider struct {
-	c *ManagementClient
-}
-
-func (p registrationTokenProvider) TokenForRegistration(ctx context.Context) (string, error) {
-	return p.c.GetInitialAccessToken(ctx, "")
+func (c *ManagementClient) CreateTokenProvider(_ string) dcr.TokenProviderFunc {
+	return func(_ context.Context) (string, error) {
+		token, err := c.token()
+		if err != nil {
+			return "", fmt.Errorf("failed to get management token: %w", err)
+		}
+		return token.AccessToken, nil
+	}
 }
 
 func (c *ManagementClient) dcrClient() dcr.Client {
-	return dcr.NewClient(dcr.WithTokenProvider(registrationTokenProvider{c}))
+	return dcr.NewClient(dcr.WithTokenProvider(c.CreateTokenProvider("")))
 }
 
-func (c *ManagementClient) RegisterClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
-	return c.dcrClient().Register(ctx, c.baseURL+"/oidc/register", metadata)
+func (c *ManagementClient) RegistrationEndpoint(_ string) string {
+	return c.baseURL + "/oidc/register"
+}
+
+func (c *ManagementClient) CreateClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
+	return c.dcrClient().Register(ctx, c.RegistrationEndpoint(metadata.ClientID), metadata)
 }
 
 func (c *ManagementClient) GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error) {
@@ -116,41 +130,50 @@ func (c *ManagementClient) DeleteClient(ctx context.Context, clientID, registrat
 	return c.dcrClient().Delete(ctx, clientID, registrationURI, registrationToken)
 }
 
-func (c *ManagementClient) CreateTenant(ctx context.Context, config idp.TenantConfig) (created bool, err error) {
-	_, err = c.mgmt.Organizations.Create(ctx, &management.CreateOrganizationRequestContent{
-		Name: config.Realm,
-	})
-	if err == nil {
-		return true, nil
+func (c *ManagementClient) CreateOrganization(ctx context.Context, orgID string, _ idp.OrganizationConfig) error {
+	if _, err := c.mgmt.Organizations.Create(ctx, &management.CreateOrganizationRequestContent{
+		Name: orgID,
+	}); err != nil {
+		return fmt.Errorf("failed to create organization %q: %w", orgID, err)
 	}
-	if !isStatus(err, http.StatusConflict) {
-		return false, fmt.Errorf("failed to create organization %q: %w", config.Realm, err)
-	}
-
-	return false, nil
+	return nil
 }
 
-func (c *ManagementClient) UpdateTenant(ctx context.Context, tenantID string, config idp.TenantConfig) error {
-	org, err := c.getOrganizationByName(ctx, tenantID)
+func (c *ManagementClient) UpdateOrganization(ctx context.Context, orgID string, _ idp.OrganizationConfig) error {
+	org, err := c.getOrganizationByName(ctx, orgID)
 	if err != nil {
 		return err
 	}
 	if org == nil {
-		return fmt.Errorf("organization %q not found for update", tenantID)
+		return fmt.Errorf("organization %q not found for update", orgID)
 	}
 
-	name := config.Realm
+	name := orgID
 	if _, err := c.mgmt.Organizations.Update(ctx, deref(org.ID), &management.UpdateOrganizationRequestContent{
 		Name: &name,
 	}); err != nil {
-		return fmt.Errorf("failed to update organization %q: %w", tenantID, err)
+		return fmt.Errorf("failed to update organization %q: %w", orgID, err)
 	}
 
 	return nil
 }
 
-func (c *ManagementClient) DeleteTenant(ctx context.Context, tenantID string) error {
-	org, err := c.getOrganizationByName(ctx, tenantID)
+func (c *ManagementClient) EnsureOrganization(ctx context.Context, orgID string, cfg idp.OrganizationConfig) (created bool, err error) {
+	_, err = c.mgmt.Organizations.Create(ctx, &management.CreateOrganizationRequestContent{
+		Name: orgID,
+	})
+	if err == nil {
+		return true, nil
+	}
+	if !isStatus(err, http.StatusConflict) {
+		return false, fmt.Errorf("failed to create organization %q: %w", orgID, err)
+	}
+
+	return false, c.UpdateOrganization(ctx, orgID, cfg)
+}
+
+func (c *ManagementClient) DeleteOrganization(ctx context.Context, orgID string) error {
+	org, err := c.getOrganizationByName(ctx, orgID)
 	if err != nil {
 		return err
 	}
@@ -159,14 +182,14 @@ func (c *ManagementClient) DeleteTenant(ctx context.Context, tenantID string) er
 	}
 
 	if err := c.mgmt.Organizations.Delete(ctx, deref(org.ID)); err != nil && !isStatus(err, http.StatusNotFound) {
-		return fmt.Errorf("failed to delete organization %q: %w", tenantID, err)
+		return fmt.Errorf("failed to delete organization %q: %w", orgID, err)
 	}
 
 	return nil
 }
 
-func (c *ManagementClient) TenantExists(ctx context.Context, tenantID string) (bool, error) {
-	org, err := c.getOrganizationByName(ctx, tenantID)
+func (c *ManagementClient) OrganizationExists(ctx context.Context, orgID string) (bool, error) {
+	org, err := c.getOrganizationByName(ctx, orgID)
 	if err != nil {
 		return false, err
 	}
@@ -184,15 +207,7 @@ func (c *ManagementClient) getOrganizationByName(ctx context.Context, name strin
 	return org, nil
 }
 
-func (c *ManagementClient) GetInitialAccessToken(ctx context.Context, tenantID string) (string, error) {
-	token, err := c.token()
-	if err != nil {
-		return "", fmt.Errorf("failed to get management token: %w", err)
-	}
-	return token.AccessToken, nil
-}
-
-func (c *ManagementClient) RefreshRegistrationToken(ctx context.Context, tenantID, clientID string) (string, error) {
+func (c *ManagementClient) RefreshRegistrationToken(ctx context.Context, orgID, clientID string) (string, error) {
 	c.mu.Lock()
 	c.ts = c.oauth2Config.TokenSource(ctx)
 	ts := c.ts
@@ -205,7 +220,7 @@ func (c *ManagementClient) RefreshRegistrationToken(ctx context.Context, tenantI
 	return token.AccessToken, nil
 }
 
-func (c *ManagementClient) GetUserByEmail(ctx context.Context, tenantID, email string) (*idp.User, error) {
+func (c *ManagementClient) GetUserByEmail(ctx context.Context, orgID, email string) (*idp.User, error) {
 	users, err := c.mgmt.Users.ListUsersByEmail(ctx, &management.ListUsersByEmailRequestParameters{
 		Email: email,
 	})
@@ -218,24 +233,16 @@ func (c *ManagementClient) GetUserByEmail(ctx context.Context, tenantID, email s
 	return toUser(users[0]), nil
 }
 
-func (c *ManagementClient) ListUsers(ctx context.Context, tenantID string, opts idp.ListUsersOptions) ([]*idp.User, error) {
-	if opts.Email != "" {
-		user, err := c.GetUserByEmail(ctx, tenantID, opts.Email)
-		if err != nil {
-			return nil, err
-		}
-		return []*idp.User{user}, nil
-	}
-
+func (c *ManagementClient) ListUsers(ctx context.Context, orgID string) ([]idp.User, error) {
 	page, err := c.mgmt.Users.List(ctx, &management.ListUsersRequestParameters{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to query users: %w", err)
 	}
 
-	var users []*idp.User
+	users := make([]idp.User, 0)
 	iter := page.Iterator()
 	for iter.Next(ctx) {
-		users = append(users, toUser(iter.Current()))
+		users = append(users, *toUser(iter.Current()))
 	}
 	if err := iter.Err(); err != nil {
 		return nil, fmt.Errorf("failed to query users: %w", err)
@@ -244,19 +251,148 @@ func (c *ManagementClient) ListUsers(ctx context.Context, tenantID string, opts 
 	return users, nil
 }
 
-func (c *ManagementClient) IssuerURL(tenantID string) string {
+func (c *ManagementClient) CreateUser(ctx context.Context, orgID string, clientID string, email string, inviteLink string) error {
+	verified := false
+	if _, err := c.mgmt.Users.Create(ctx, &management.CreateUserRequestContent{
+		Email:         &email,
+		EmailVerified: &verified,
+		Connection:    defaultUserConnection,
+	}); err != nil {
+		return fmt.Errorf("failed to create user %q: %w", email, err)
+	}
+	return nil
+}
+
+func (c *ManagementClient) ListClients(ctx context.Context) ([]idp.ClientInfo, error) {
+	page, err := c.mgmt.Clients.List(ctx, &management.ListClientsRequestParameters{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list clients: %w", err)
+	}
+
+	clients := make([]idp.ClientInfo, 0)
+	iter := page.Iterator()
+	for iter.Next(ctx) {
+		clients = append(clients, toClientInfo(iter.Current()))
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list clients: %w", err)
+	}
+
+	return clients, nil
+}
+
+func (c *ManagementClient) GetClientByName(ctx context.Context, clientName string) (*idp.ClientInfo, error) {
+	return c.findClient(ctx, func(client idp.ClientInfo) bool {
+		return client.Name == clientName
+	})
+}
+
+func (c *ManagementClient) GetClientByID(ctx context.Context, clientID string) (*idp.ClientInfo, error) {
+	client, err := c.findClient(ctx, func(client idp.ClientInfo) bool {
+		return client.ClientID == clientID
+	})
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("client with client_id %q not found", clientID)
+	}
+	return client, nil
+}
+
+func (c *ManagementClient) findClient(ctx context.Context, pred func(idp.ClientInfo) bool) (*idp.ClientInfo, error) {
+	clients, err := c.ListClients(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, client := range clients {
+		if pred(client) {
+			return &client, nil
+		}
+	}
+	return nil, nil
+}
+
+func (c *ManagementClient) CreateServiceAccountClient(ctx context.Context, config idp.ServiceAccountClientConfig) (*idp.ClientInfo, error) {
+	name := config.Name
+	if name == "" {
+		name = config.ClientID
+	}
+
+	resp, err := c.mgmt.Clients.Create(ctx, &management.CreateClientRequestContent{
+		Name:                    name,
+		AppType:                 management.ClientAppTypeEnumNonInteractive.Ptr(),
+		GrantTypes:              []string{dcr.GrantTypeClientCredentials},
+		TokenEndpointAuthMethod: management.ClientTokenEndpointAuthMethodEnumClientSecretPost.Ptr(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service account client %q: %w", name, err)
+	}
+
+	return &idp.ClientInfo{
+		ID:       deref(resp.ClientID),
+		ClientID: deref(resp.ClientID),
+		Name:     deref(resp.Name),
+		Secret:   deref(resp.ClientSecret),
+	}, nil
+}
+
+func (c *ManagementClient) GetClientSecret(ctx context.Context, clientID string) (string, error) {
+	client, err := c.mgmt.Clients.Get(ctx, clientID, &management.GetClientRequestParameters{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get client %q: %w", clientID, err)
+	}
+	return deref(client.ClientSecret), nil
+}
+
+func (c *ManagementClient) GetServiceAccountUser(ctx context.Context, clientID string) (*idp.UserInfo, error) {
+	return nil, fmt.Errorf("service account users are not supported by the Auth0 provider")
+}
+
+func (c *ManagementClient) GetOrganizationRole(ctx context.Context, roleName string) (*idp.RoleInfo, error) {
+	page, err := c.mgmt.Roles.List(ctx, &management.ListRolesRequestParameters{
+		NameFilter: &roleName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list roles: %w", err)
+	}
+
+	iter := page.Iterator()
+	for iter.Next(ctx) {
+		role := iter.Current()
+		if deref(role.Name) == roleName {
+			return &idp.RoleInfo{ID: deref(role.ID), Name: deref(role.Name)}, nil
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list roles: %w", err)
+	}
+
+	return nil, nil
+}
+
+func (c *ManagementClient) AssignRoleToUser(ctx context.Context, serviceAccountUserID string, role idp.RoleInfo) error {
+	if err := c.mgmt.Users.Roles.Assign(ctx, serviceAccountUserID, &management.AssignUserRolesRequestContent{
+		Roles: []string{role.ID},
+	}); err != nil {
+		return fmt.Errorf("failed to assign role %q to user %q: %w", role.Name, serviceAccountUserID, err)
+	}
+	return nil
+}
+
+func (c *ManagementClient) IssuerURL(_ string) string {
 	return c.baseURL + "/"
 }
 
-func (c *ManagementClient) JWKSURL(tenantID string) string {
+func (c *ManagementClient) JWKSURL(_ string) string {
 	return c.baseURL + "/.well-known/jwks.json"
 }
 
-func (c *ManagementClient) AuthorizationEndpoint(tenantID string) string {
+func (c *ManagementClient) AuthorizationEndpoint(_ string) string {
 	return c.baseURL + "/authorize"
 }
 
-func (c *ManagementClient) TokenEndpoint(tenantID string) string {
+func (c *ManagementClient) TokenEndpoint(_ string) string {
 	return c.baseURL + "/oauth/token"
 }
 
@@ -265,6 +401,15 @@ func toUser(u *management.UserResponseSchema) *idp.User {
 		ID:      deref(u.UserID),
 		Email:   deref(u.Email),
 		Enabled: u.Blocked == nil || !*u.Blocked,
+	}
+}
+
+func toClientInfo(cl *management.Client) idp.ClientInfo {
+	return idp.ClientInfo{
+		ID:       deref(cl.ClientID),
+		ClientID: deref(cl.ClientID),
+		Name:     deref(cl.Name),
+		Secret:   deref(cl.ClientSecret),
 	}
 }
 
@@ -281,10 +426,3 @@ func deref(s *string) string {
 	}
 	return *s
 }
-
-//  dcr.TokenRefresher is not implemented and not needed. Auth0 never builds a RetryTransport, so nothing consumes RefreshToken(ctx, clientID)
-var (
-	_ idp.Provider       = (*ManagementClient)(nil)
-	_ oauth2.TokenSource = managementTokenSource{}
-	_ dcr.TokenProvider  = registrationTokenProvider{}
-)

@@ -80,7 +80,51 @@ func TestNewManagementClient_BaseURL(t *testing.T) {
 	}
 }
 
-func TestManagementClient_CreateTenant(t *testing.T) {
+func TestManagementClient_CreateOrganization(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantErr     bool
+	}{
+		{
+			name: "organization created",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.Equal(t, "/api/v2/organizations", r.URL.Path)
+					json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+				})
+			},
+		},
+		{
+			name: "create returns error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name:        "connection refused",
+			setupServer: closedServer,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			err := testClient(t, srv).CreateOrganization(context.Background(), "my-org", idp.OrganizationConfig{})
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestManagementClient_EnsureOrganization(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
@@ -99,13 +143,19 @@ func TestManagementClient_CreateTenant(t *testing.T) {
 			wantCreated: true,
 		},
 		{
-			name: "organization exists on conflict",
+			name: "organization updated on conflict",
 			setupServer: func(t *testing.T) *httptest.Server {
 				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
-					if r.Method != http.MethodPost || r.URL.Path != "/api/v2/organizations" {
+					switch {
+					case r.Method == http.MethodPost && r.URL.Path == "/api/v2/organizations":
+						w.WriteHeader(http.StatusConflict)
+					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/organizations/name/my-org":
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+					case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/organizations/org-1":
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+					default:
 						t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 					}
-					w.WriteHeader(http.StatusConflict)
 				})
 			},
 			wantCreated: false,
@@ -128,7 +178,7 @@ func TestManagementClient_CreateTenant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			created, err := testClient(t, srv).CreateTenant(context.Background(), idp.TenantConfig{Realm: "my-org"})
+			created, err := testClient(t, srv).EnsureOrganization(context.Background(), "my-org", idp.OrganizationConfig{})
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -139,7 +189,7 @@ func TestManagementClient_CreateTenant(t *testing.T) {
 	}
 }
 
-func TestManagementClient_UpdateTenant(t *testing.T) {
+func TestManagementClient_UpdateOrganization(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
@@ -200,7 +250,7 @@ func TestManagementClient_UpdateTenant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			err := testClient(t, srv).UpdateTenant(context.Background(), "my-org", idp.TenantConfig{Realm: "my-org"})
+			err := testClient(t, srv).UpdateOrganization(context.Background(), "my-org", idp.OrganizationConfig{})
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -210,7 +260,7 @@ func TestManagementClient_UpdateTenant(t *testing.T) {
 	}
 }
 
-func TestManagementClient_DeleteTenant(t *testing.T) {
+func TestManagementClient_DeleteOrganization(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
@@ -282,7 +332,7 @@ func TestManagementClient_DeleteTenant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			err := testClient(t, srv).DeleteTenant(context.Background(), "my-org")
+			err := testClient(t, srv).DeleteOrganization(context.Background(), "my-org")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -292,7 +342,7 @@ func TestManagementClient_DeleteTenant(t *testing.T) {
 	}
 }
 
-func TestManagementClient_TenantExists(t *testing.T) {
+func TestManagementClient_OrganizationExists(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
@@ -336,7 +386,7 @@ func TestManagementClient_TenantExists(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			exists, err := testClient(t, srv).TenantExists(context.Background(), "my-org")
+			exists, err := testClient(t, srv).OrganizationExists(context.Background(), "my-org")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -347,7 +397,7 @@ func TestManagementClient_TenantExists(t *testing.T) {
 	}
 }
 
-func TestManagementClient_GetInitialAccessToken(t *testing.T) {
+func TestManagementClient_CreateTokenProvider(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
@@ -370,7 +420,7 @@ func TestManagementClient_GetInitialAccessToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			token, err := testClient(t, srv).GetInitialAccessToken(context.Background(), "")
+			token, err := testClient(t, srv).CreateTokenProvider("")(context.Background())
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -486,34 +536,10 @@ func TestManagementClient_GetUserByEmail(t *testing.T) {
 func TestManagementClient_ListUsers(t *testing.T) {
 	tests := []struct {
 		name        string
-		opts        idp.ListUsersOptions
 		setupServer func(t *testing.T) *httptest.Server
-		wantUsers   []*idp.User
+		wantUsers   []idp.User
 		wantErr     bool
 	}{
-		{
-			name: "list users by email option",
-			opts: idp.ListUsersOptions{Email: "user@example.com"},
-			setupServer: func(t *testing.T) *httptest.Server {
-				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, "/api/v2/users-by-email", r.URL.Path)
-					json.NewEncoder(w).Encode([]map[string]any{ //nolint:errcheck
-						{"user_id": "auth0|123", "email": "user@example.com"},
-					})
-				})
-			},
-			wantUsers: []*idp.User{{ID: "auth0|123", Email: "user@example.com", Enabled: true}},
-		},
-		{
-			name: "list users by email not found",
-			opts: idp.ListUsersOptions{Email: "missing@example.com"},
-			setupServer: func(t *testing.T) *httptest.Server {
-				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
-					json.NewEncoder(w).Encode([]map[string]any{}) //nolint:errcheck
-				})
-			},
-			wantErr: true,
-		},
 		{
 			name: "list all users",
 			setupServer: func(t *testing.T) *httptest.Server {
@@ -531,7 +557,7 @@ func TestManagementClient_ListUsers(t *testing.T) {
 					json.NewEncoder(w).Encode(map[string]any{"users": []map[string]any{}}) //nolint:errcheck
 				})
 			},
-			wantUsers: []*idp.User{
+			wantUsers: []idp.User{
 				{ID: "auth0|1", Email: "a@example.com", Enabled: true},
 				{ID: "auth0|2", Email: "b@example.com", Enabled: false},
 			},
@@ -554,7 +580,7 @@ func TestManagementClient_ListUsers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			users, err := testClient(t, srv).ListUsers(context.Background(), "my-org", tt.opts)
+			users, err := testClient(t, srv).ListUsers(context.Background(), "my-org")
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -577,4 +603,388 @@ func TestDeref(t *testing.T) {
 	s := "value"
 	assert.Equal(t, "value", deref(&s))
 	assert.Equal(t, "", deref(nil))
+}
+
+func TestManagementClient_ListClients(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantClients []idp.ClientInfo
+		wantErr     bool
+	}{
+		{
+			name: "list clients",
+			setupServer: func(t *testing.T) *httptest.Server {
+				call := 0
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "/api/v2/clients", r.URL.Path)
+					call++
+					if call == 1 {
+						json.NewEncoder(w).Encode(map[string]any{"clients": []map[string]any{ //nolint:errcheck
+							{"client_id": "c1", "name": "client-one"},
+							{"client_id": "c2", "name": "client-two"},
+						}})
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]any{"clients": []map[string]any{}}) //nolint:errcheck
+				})
+			},
+			wantClients: []idp.ClientInfo{
+				{ID: "c1", ClientID: "c1", Name: "client-one"},
+				{ID: "c2", ClientID: "c2", Name: "client-two"},
+			},
+		},
+		{
+			name: "list error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name:        "connection refused",
+			setupServer: closedServer,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			clients, err := testClient(t, srv).ListClients(context.Background())
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantClients, clients)
+		})
+	}
+}
+
+func TestManagementClient_GetClientByName(t *testing.T) {
+	listClients := func(w http.ResponseWriter, call *int) {
+		*call++
+		if *call == 1 {
+			json.NewEncoder(w).Encode(map[string]any{"clients": []map[string]any{ //nolint:errcheck
+				{"client_id": "c1", "name": "client-one"},
+			}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"clients": []map[string]any{}}) //nolint:errcheck
+	}
+	tests := []struct {
+		name       string
+		clientName string
+		wantClient *idp.ClientInfo
+		wantErr    bool
+	}{
+		{
+			name:       "client found",
+			clientName: "client-one",
+			wantClient: &idp.ClientInfo{ID: "c1", ClientID: "c1", Name: "client-one"},
+		},
+		{
+			name:       "client not found returns nil",
+			clientName: "missing",
+			wantClient: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			call := 0
+			srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+				listClients(w, &call)
+			})
+			client, err := testClient(t, srv).GetClientByName(context.Background(), tt.clientName)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantClient, client)
+		})
+	}
+}
+
+func TestManagementClient_GetClientByID(t *testing.T) {
+	listClients := func(w http.ResponseWriter, call *int) {
+		*call++
+		if *call == 1 {
+			json.NewEncoder(w).Encode(map[string]any{"clients": []map[string]any{ //nolint:errcheck
+				{"client_id": "c1", "name": "client-one"},
+			}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"clients": []map[string]any{}}) //nolint:errcheck
+	}
+	t.Run("client found", func(t *testing.T) {
+		call := 0
+		srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+			listClients(w, &call)
+		})
+		client, err := testClient(t, srv).GetClientByID(context.Background(), "c1")
+		require.NoError(t, err)
+		assert.Equal(t, &idp.ClientInfo{ID: "c1", ClientID: "c1", Name: "client-one"}, client)
+	})
+	t.Run("client not found returns error", func(t *testing.T) {
+		call := 0
+		srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+			listClients(w, &call)
+		})
+		_, err := testClient(t, srv).GetClientByID(context.Background(), "missing")
+		require.Error(t, err)
+	})
+	t.Run("list error", func(t *testing.T) {
+		srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		})
+		_, err := testClient(t, srv).GetClientByID(context.Background(), "c1")
+		require.Error(t, err)
+	})
+}
+
+func TestManagementClient_CreateServiceAccountClient(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      idp.ServiceAccountClientConfig
+		setupServer func(t *testing.T) *httptest.Server
+		wantClient  *idp.ClientInfo
+		wantErr     bool
+	}{
+		{
+			name:   "client created",
+			config: idp.ServiceAccountClientConfig{ClientID: "svc", Name: "svc-account"},
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.Equal(t, "/api/v2/clients", r.URL.Path)
+					json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+						"client_id": "svc", "name": "svc-account", "client_secret": "topsecret",
+					})
+				})
+			},
+			wantClient: &idp.ClientInfo{ID: "svc", ClientID: "svc", Name: "svc-account", Secret: "topsecret"},
+		},
+		{
+			name:   "name falls back to client id",
+			config: idp.ServiceAccountClientConfig{ClientID: "svc"},
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+						"client_id": "svc", "name": "svc", "client_secret": "topsecret",
+					})
+				})
+			},
+			wantClient: &idp.ClientInfo{ID: "svc", ClientID: "svc", Name: "svc", Secret: "topsecret"},
+		},
+		{
+			name:   "create error",
+			config: idp.ServiceAccountClientConfig{ClientID: "svc"},
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			client, err := testClient(t, srv).CreateServiceAccountClient(context.Background(), tt.config)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantClient, client)
+		})
+	}
+}
+
+func TestManagementClient_GetClientSecret(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantSecret  string
+		wantErr     bool
+	}{
+		{
+			name: "secret returned",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "/api/v2/clients/c1", r.URL.Path)
+					json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+						"client_id": "c1", "client_secret": "topsecret",
+					})
+				})
+			},
+			wantSecret: "topsecret",
+		},
+		{
+			name: "get error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			secret, err := testClient(t, srv).GetClientSecret(context.Background(), "c1")
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSecret, secret)
+		})
+	}
+}
+
+func TestManagementClient_GetServiceAccountUser(t *testing.T) {
+	srv := testServer(t, func(w http.ResponseWriter, r *http.Request) {})
+	_, err := testClient(t, srv).GetServiceAccountUser(context.Background(), "c1")
+	require.Error(t, err)
+}
+
+func TestManagementClient_GetOrganizationRole(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantRole    *idp.RoleInfo
+		wantErr     bool
+	}{
+		{
+			name: "role found",
+			setupServer: func(t *testing.T) *httptest.Server {
+				call := 0
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "/api/v2/roles", r.URL.Path)
+					call++
+					if call == 1 {
+						json.NewEncoder(w).Encode(map[string]any{"roles": []map[string]any{ //nolint:errcheck
+							{"id": "r1", "name": "admin"},
+						}})
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]any{"roles": []map[string]any{}}) //nolint:errcheck
+				})
+			},
+			wantRole: &idp.RoleInfo{ID: "r1", Name: "admin"},
+		},
+		{
+			name: "role not found returns nil",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					json.NewEncoder(w).Encode(map[string]any{"roles": []map[string]any{}}) //nolint:errcheck
+				})
+			},
+			wantRole: nil,
+		},
+		{
+			name: "list error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			role, err := testClient(t, srv).GetOrganizationRole(context.Background(), "admin")
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRole, role)
+		})
+	}
+}
+
+func TestManagementClient_AssignRoleToUser(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantErr     bool
+	}{
+		{
+			name: "role assigned",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.Equal(t, "/api/v2/users/auth0|123/roles", r.URL.Path)
+					w.WriteHeader(http.StatusNoContent)
+				})
+			},
+		},
+		{
+			name: "assign error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			err := testClient(t, srv).AssignRoleToUser(context.Background(), "auth0|123", idp.RoleInfo{ID: "r1", Name: "admin"})
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestManagementClient_CreateUser(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantErr     bool
+	}{
+		{
+			name: "user created",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.Equal(t, "/api/v2/users", r.URL.Path)
+					json.NewEncoder(w).Encode(map[string]any{"user_id": "auth0|new", "email": "new@example.com"}) //nolint:errcheck
+				})
+			},
+		},
+		{
+			name: "create error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			err := testClient(t, srv).CreateUser(context.Background(), "my-org", "client-id", "new@example.com", "https://invite")
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }
