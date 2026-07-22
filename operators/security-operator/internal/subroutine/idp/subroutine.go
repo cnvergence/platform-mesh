@@ -31,8 +31,8 @@ import (
 	"go.platform-mesh.io/golang-commons/logger"
 	iclient "go.platform-mesh.io/security-operator/internal/client"
 	"go.platform-mesh.io/security-operator/internal/config"
-	"go.platform-mesh.io/security-operator/pkg/clientreg"
-	"go.platform-mesh.io/security-operator/pkg/clientreg/keycloak"
+	"go.platform-mesh.io/security-operator/internal/idp/dcr"
+	"go.platform-mesh.io/security-operator/internal/idp/keycloak"
 	"go.platform-mesh.io/subroutines"
 
 	corev1 "k8s.io/api/core/v1"
@@ -95,17 +95,17 @@ func New(ctx context.Context, cfg *config.Config, mgr mcmanager.Manager, kcpClie
 	}, nil
 }
 
-func (s *subroutine) newOIDCClient(realmName string) (clientreg.Client, *keycloak.AdminClient) {
+func (s *subroutine) newOIDCClient(realmName string) (dcr.Client, *keycloak.AdminClient) {
 	adminClient := keycloak.NewAdminClient(s.adminClient, s.keycloakBaseURL, realmName)
 
 	httpClient := &http.Client{
 		Timeout:   time.Duration(s.cfg.HttpClientTimeoutSeconds) * time.Second,
-		Transport: clientreg.NewRetryTransport(nil, adminClient),
+		Transport: dcr.NewRetryTransport(nil, adminClient),
 	}
 
-	oidcClient := clientreg.NewClient(
-		clientreg.WithHTTPClient(httpClient),
-		clientreg.WithTokenProvider(adminClient),
+	oidcClient := dcr.NewClient(
+		dcr.WithHTTPClient(httpClient),
+		dcr.WithTokenProvider(adminClient),
 	)
 
 	return oidcClient, adminClient
@@ -149,7 +149,7 @@ func (s *subroutine) finalize(ctx context.Context, obj ctrlruntimeclient.Object)
 		}
 
 		err = oidcClient.Delete(ctx, clientIDToDelete, registrationClientURIToDelete, registrationAccessToken)
-		if err != nil && !clientreg.IsNotFound(err) {
+		if err != nil && !dcr.IsNotFound(err) {
 			return subroutines.OK(), fmt.Errorf("failed to delete oidc client: %w", err)
 		}
 
@@ -285,7 +285,7 @@ func (s *subroutine) ensureRealm(ctx context.Context, adminClient *keycloak.Admi
 	return nil
 }
 
-func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcorev1alpha1.IdentityProviderConfiguration, oidcClient clientreg.Client, log *logger.Logger) error {
+func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcorev1alpha1.IdentityProviderConfiguration, oidcClient dcr.Client, log *logger.Logger) error {
 	for clientName, managedClient := range idpConfig.Status.ManagedClients {
 		exists := slices.ContainsFunc(idpConfig.Spec.Clients,
 			func(c pmcorev1alpha1.IdentityProviderClientConfig) bool {
@@ -307,7 +307,7 @@ func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcore
 			return fmt.Errorf("failed to get registration access token from secret: %w", err)
 		}
 
-		if err := oidcClient.Delete(ctx, managedClient.ClientID, managedClient.RegistrationClientURI, registrationAccessToken); err != nil && !clientreg.IsNotFound(err) {
+		if err := oidcClient.Delete(ctx, managedClient.ClientID, managedClient.RegistrationClientURI, registrationAccessToken); err != nil && !dcr.IsNotFound(err) {
 			return fmt.Errorf("failed to delete client %s: %w", clientName, err)
 		}
 
@@ -329,21 +329,21 @@ func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcore
 	return nil
 }
 
-func (s *subroutine) registerOrUpdateClient(ctx context.Context, ipc *pmcorev1alpha1.IdentityProviderConfiguration, clientConfig *pmcorev1alpha1.IdentityProviderClientConfig, realmName string, oidcClient clientreg.Client, adminClient *keycloak.AdminClient) (clientreg.ClientInformation, error) {
+func (s *subroutine) registerOrUpdateClient(ctx context.Context, ipc *pmcorev1alpha1.IdentityProviderConfiguration, clientConfig *pmcorev1alpha1.IdentityProviderClientConfig, realmName string, oidcClient dcr.Client, adminClient *keycloak.AdminClient) (dcr.ClientInformation, error) {
 	existingClient, err := adminClient.GetClientByName(ctx, clientConfig.ClientName)
 	if err != nil {
-		return clientreg.ClientInformation{}, fmt.Errorf("failed to check if client exists: %w", err)
+		return dcr.ClientInformation{}, fmt.Errorf("failed to check if client exists: %w", err)
 	}
 
-	authMethod := clientreg.TokenEndpointAuthMethodClientSecretBasic
+	authMethod := dcr.TokenEndpointAuthMethodClientSecretBasic
 	if clientConfig.ClientType == pmcorev1alpha1.IdentityProviderClientTypePublic {
-		authMethod = clientreg.TokenEndpointAuthMethodNone
+		authMethod = dcr.TokenEndpointAuthMethodNone
 	}
 
-	metadata := clientreg.ClientMetadata{
+	metadata := dcr.ClientMetadata{
 		ClientName:              clientConfig.ClientName,
 		RedirectURIs:            clientConfig.RedirectURIs,
-		GrantTypes:              []string{clientreg.GrantTypeAuthorizationCode, clientreg.GrantTypeRefreshToken},
+		GrantTypes:              []string{dcr.GrantTypeAuthorizationCode, dcr.GrantTypeRefreshToken},
 		TokenEndpointAuthMethod: authMethod,
 		PostLogoutRedirectURIs:  clientConfig.PostLogoutRedirectURIs,
 	}
@@ -355,7 +355,7 @@ func (s *subroutine) registerOrUpdateClient(ctx context.Context, ipc *pmcorev1al
 	// Client exists, update it
 	registrationAccessToken, err := s.readRegistrationAccessToken(ctx, clientConfig.SecretRef)
 	if err != nil && !apierrors.IsNotFound(err) {
-		return clientreg.ClientInformation{}, fmt.Errorf("failed to get registration access token from secret: %w", err)
+		return dcr.ClientInformation{}, fmt.Errorf("failed to get registration access token from secret: %w", err)
 	}
 
 	registrationClientURI := ipc.Status.ManagedClients[clientConfig.ClientName].RegistrationClientURI
@@ -384,7 +384,7 @@ func (s *subroutine) readRegistrationAccessToken(ctx context.Context, secretRef 
 	return string(secret.Data["registration_access_token"]), nil
 }
 
-func (s *subroutine) createOrUpdateSecret(ctx context.Context, clientConfig *pmcorev1alpha1.IdentityProviderClientConfig, clientInfo clientreg.ClientInformation, idpName string) error {
+func (s *subroutine) createOrUpdateSecret(ctx context.Context, clientConfig *pmcorev1alpha1.IdentityProviderClientConfig, clientInfo dcr.ClientInformation, idpName string) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      clientConfig.SecretRef.Name,

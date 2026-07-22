@@ -29,8 +29,8 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"go.platform-mesh.io/security-operator/internal/idp"
+	"go.platform-mesh.io/security-operator/internal/idp/dcr"
 	"go.platform-mesh.io/security-operator/internal/subroutine/invite"
-	"go.platform-mesh.io/security-operator/pkg/clientreg"
 )
 
 const maxErrorBodySize = 4096
@@ -504,23 +504,23 @@ func (c *AdminClient) AssignRealmRoleToUser(ctx context.Context, userID string, 
 	return nil
 }
 
-func (c *AdminClient) RegisterClient(ctx context.Context, metadata clientreg.ClientMetadata) (clientreg.ClientInformation, error) {
-	client := clientreg.NewClient(clientreg.WithHTTPClient(c.httpClient), clientreg.WithTokenProvider(c))
+func (c *AdminClient) RegisterClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
+	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
 	return client.Register(ctx, c.RegistrationEndpoint(), metadata)
 }
 
-func (c *AdminClient) GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (clientreg.ClientInformation, error) {
-	client := clientreg.NewClient(clientreg.WithHTTPClient(c.httpClient), clientreg.WithTokenProvider(c))
+func (c *AdminClient) GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error) {
+	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
 	return client.Read(ctx, clientID, registrationURI, registrationToken)
 }
 
-func (c *AdminClient) UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata clientreg.ClientMetadata) (clientreg.ClientInformation, error) {
-	client := clientreg.NewClient(clientreg.WithHTTPClient(c.httpClient), clientreg.WithTokenProvider(c))
+func (c *AdminClient) UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
+	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
 	return client.Update(ctx, registrationURI, registrationToken, metadata)
 }
 
 func (c *AdminClient) DeleteClient(ctx context.Context, clientID, registrationURI, registrationToken string) error {
-	client := clientreg.NewClient(clientreg.WithHTTPClient(c.httpClient), clientreg.WithTokenProvider(c))
+	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
 	return client.Delete(ctx, clientID, registrationURI, registrationToken)
 }
 
@@ -623,7 +623,7 @@ func (c *AdminClient) TokenEndpoint(tenantID string) string {
 }
 
 var (
-	_ idp.Provider             = (*AdminClient)(nil)
-	_ clientreg.TokenProvider  = (*AdminClient)(nil)
-	_ clientreg.TokenRefresher = (*AdminClient)(nil)
+	_ idp.Provider       = (*AdminClient)(nil)
+	_ dcr.TokenProvider  = (*AdminClient)(nil)
+	_ dcr.TokenRefresher = (*AdminClient)(nil)
 )

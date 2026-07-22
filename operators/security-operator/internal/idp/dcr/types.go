@@ -14,8 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package clientreg provides a client for OIDC Dynamic Client Registration (RFC 7591/7592).
-package clientreg
+// Package dcr provides a client for OIDC Dynamic Client Registration (RFC 7591/7592).
+package dcr
 
 type ClientMetadata struct {
 	ClientID                string   `json:"client_id,omitempty"`
