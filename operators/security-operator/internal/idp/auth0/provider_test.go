@@ -19,19 +19,37 @@ package auth0
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 
-	"github.com/auth0/go-auth0/v2/management/option"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.platform-mesh.io/security-operator/internal/idp"
 )
 
-// closedServer returns a server that is immediately shut down so any request
-// to it fails with "connection refused", simulating a network error.
+// testServer wraps the given handler with an OAuth token endpoint so the Auth0
+// management client can obtain a token before every management API call.
+func testServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oauth/token", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"access_token": "management-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	})
+	mux.HandleFunc("/", handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// closedServer returns a server that is immediately shut down so any request to
+// it fails with "connection refused", simulating a network error.
 func closedServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
@@ -39,355 +57,84 @@ func closedServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-func managementClient(t *testing.T, srv *httptest.Server) *Provider {
+func testClient(t *testing.T, srv *httptest.Server) *ManagementClient {
 	t.Helper()
-	return New(srv.URL, "m2m-client", "m2m-secret", option.WithoutRetries())
+	return NewManagementClient(context.Background(), srv.URL, "client-id", "client-secret")
 }
 
-// withToken serves a management token on /oauth/token and delegates all other
-// requests to next, asserting the bearer token is attached.
-func withToken(t *testing.T, next http.HandlerFunc) http.HandlerFunc {
-	t.Helper()
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/oauth/token" {
-			assert.Equal(t, http.MethodPost, r.Method)
-			require.NoError(t, r.ParseForm())
-			assert.Equal(t, "client_credentials", r.Form.Get("grant_type"))
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"access_token": "mgmt-token-123", "token_type": "Bearer", "expires_in": 3600}) //nolint:errcheck
-			return
-		}
-		assert.Equal(t, "Bearer mgmt-token-123", r.Header.Get("Authorization"))
-		next(w, r)
-	}
-}
-
-func listClientsJSON(page int) string {
-	clients := []map[string]string{}
-	if page == 0 {
-		clients = append(clients, map[string]string{"client_id": "client-id-1", "name": "my-client"})
-	}
-	b, _ := json.Marshal(map[string]any{
-		"start":   page * 50,
-		"limit":   50,
-		"total":   1,
-		"clients": clients,
-	})
-	return string(b)
-}
-
-func pageOf(r *http.Request) int {
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	return page
-}
-
-func orgJSON(id, name string) string {
-	b, _ := json.Marshal(map[string]string{"id": id, "name": name})
-	return string(b)
-}
-
-func TestManagementClient_TokenForRegistration(t *testing.T) {
+func TestNewManagementClient_BaseURL(t *testing.T) {
 	tests := []struct {
-		name        string
-		setupServer func(t *testing.T) *httptest.Server
-		wantToken   string
-		wantErr     bool
+		name    string
+		baseURL string
+		want    string
 	}{
-		{
-			name: "successful token retrieval",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, http.MethodPost, r.Method)
-					assert.Equal(t, "/oauth/token", r.URL.Path)
-					require.NoError(t, r.ParseForm())
-					assert.Equal(t, "client_credentials", r.Form.Get("grant_type"))
-					assert.Equal(t, "m2m-client", r.Form.Get("client_id"))
-					assert.Equal(t, "m2m-secret", r.Form.Get("client_secret"))
-					assert.NotEmpty(t, r.Form.Get("audience"))
-					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]any{"access_token": "initial-access-token-123", "token_type": "Bearer", "expires_in": 3600}) //nolint:errcheck
-				}))
-			},
-			wantToken: "initial-access-token-123",
-		},
-		{
-			name: "server returns error",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusForbidden)
-					fmt.Fprint(w, "access denied") //nolint:errcheck
-				}))
-			},
-			wantErr: true,
-		},
-		{
-			name:        "connection refused",
-			setupServer: closedServer,
-			wantErr:     true,
-		},
-		{
-			name: "decode error",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					fmt.Fprint(w, "not-json") //nolint:errcheck
-				}))
-			},
-			wantErr: true,
-		},
+		{name: "plain domain gets https scheme", baseURL: "tenant.auth0.com", want: "https://tenant.auth0.com"},
+		{name: "trailing slash is trimmed", baseURL: "https://tenant.auth0.com/", want: "https://tenant.auth0.com"},
+		{name: "explicit scheme is preserved", baseURL: "http://localhost:8080", want: "http://localhost:8080"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := tt.setupServer(t)
-			defer srv.Close()
-			token, err := managementClient(t, srv).TokenForRegistration(context.Background())
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantToken, token)
+			c := NewManagementClient(context.Background(), tt.baseURL, "id", "secret")
+			assert.Equal(t, tt.want, c.baseURL)
 		})
 	}
 }
 
-func TestManagementClient_RefreshToken(t *testing.T) {
+func TestManagementClient_CreateTenant(t *testing.T) {
 	tests := []struct {
 		name        string
-		setupServer func(t *testing.T) *httptest.Server
-		wantToken   string
-		wantErr     bool
-	}{
-		{
-			name: "successful token refresh",
-			setupServer: func(t *testing.T) *httptest.Server {
-				call := 0
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					call++
-					assert.Equal(t, "/oauth/token", r.URL.Path)
-					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]any{"access_token": fmt.Sprintf("token-%d", call), "token_type": "Bearer", "expires_in": 3600}) //nolint:errcheck
-				}))
-			},
-			wantToken: "token-2",
-		},
-		{
-			name: "token endpoint fails",
-			setupServer: func(t *testing.T) *httptest.Server {
-				call := 0
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					call++
-					if call == 1 {
-						w.Header().Set("Content-Type", "application/json")
-						json.NewEncoder(w).Encode(map[string]any{"access_token": "token-1", "token_type": "Bearer", "expires_in": 3600}) //nolint:errcheck
-						return
-					}
-					w.WriteHeader(http.StatusInternalServerError)
-				}))
-			},
-			wantErr: true,
-		},
-		{
-			name:        "connection refused",
-			setupServer: closedServer,
-			wantErr:     true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := tt.setupServer(t)
-			defer srv.Close()
-			c := managementClient(t, srv)
-			// Prime the cached token; RefreshToken must discard it. The
-			// clientID argument is ignored by Auth0.
-			_, _ = c.TokenForRegistration(context.Background())
-			token, err := c.RefreshToken(context.Background(), "ignored-client-id")
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantToken, token)
-		})
-	}
-}
-
-func TestManagementClient_RegistrationEndpoint(t *testing.T) {
-	assert.Equal(t,
-		"https://my-tenant.eu.auth0.com/oidc/register",
-		New("https://my-tenant.eu.auth0.com", "id", "secret").RegistrationEndpoint(),
-	)
-}
-
-func TestManagementClient_RegistrationEndpoint_TrailingSlash(t *testing.T) {
-	assert.Equal(t,
-		"https://my-tenant.eu.auth0.com/oidc/register",
-		New("https://my-tenant.eu.auth0.com/", "id", "secret").RegistrationEndpoint(),
-	)
-}
-
-func TestManagementClient_RegistrationEndpoint_NoScheme(t *testing.T) {
-	assert.Equal(t,
-		"https://my-tenant.eu.auth0.com/oidc/register",
-		New("my-tenant.eu.auth0.com", "id", "secret").RegistrationEndpoint(),
-	)
-}
-
-func TestManagementClient_OrganizationExists(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupServer func(t *testing.T) *httptest.Server
-		wantExists  bool
-		wantErr     bool
-	}{
-		{
-			name: "organization exists",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, http.MethodGet, r.Method)
-					assert.Equal(t, "/api/v2/organizations/name/test-org", r.URL.Path)
-					fmt.Fprint(w, orgJSON("org_123", "test-org")) //nolint:errcheck
-				}))
-			},
-			wantExists: true,
-		},
-		{
-			name: "organization not found",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusNotFound)
-				}))
-			},
-			wantExists: false,
-		},
-		{
-			name: "server error",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusInternalServerError)
-				}))
-			},
-			wantErr: true,
-		},
-		{
-			name:        "connection refused",
-			setupServer: closedServer,
-			wantErr:     true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := tt.setupServer(t)
-			defer srv.Close()
-			exists, err := managementClient(t, srv).OrganizationExists(context.Background(), "test-org")
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantExists, exists)
-		})
-	}
-}
-
-func TestManagementClient_CreateOrUpdateOrganization(t *testing.T) {
-	tests := []struct {
-		name        string
-		config      OrganizationConfig
 		setupServer func(t *testing.T) *httptest.Server
 		wantCreated bool
 		wantErr     bool
 	}{
 		{
-			name:   "organization created",
-			config: OrganizationConfig{Name: "new-org", DisplayName: "New Org", Metadata: map[string]string{"tenant": "new-org"}},
+			name: "organization created",
 			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
 					assert.Equal(t, http.MethodPost, r.Method)
 					assert.Equal(t, "/api/v2/organizations", r.URL.Path)
-					var body map[string]any
-					require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
-					assert.Equal(t, "new-org", body["name"])
-					assert.Equal(t, "New Org", body["display_name"])
-					w.WriteHeader(http.StatusCreated)
-					fmt.Fprint(w, orgJSON("org_123", "new-org")) //nolint:errcheck
-				}))
+					json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+				})
 			},
 			wantCreated: true,
 		},
 		{
-			name:   "organization updated on conflict",
-			config: OrganizationConfig{Name: "existing-org", DisplayName: "Existing Org"},
+			name: "organization updated on conflict",
 			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					switch r.Method {
-					case http.MethodPost:
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					switch {
+					case r.Method == http.MethodPost && r.URL.Path == "/api/v2/organizations":
 						w.WriteHeader(http.StatusConflict)
-					case http.MethodGet:
-						assert.Equal(t, "/api/v2/organizations/name/existing-org", r.URL.Path)
-						fmt.Fprint(w, orgJSON("org_123", "existing-org")) //nolint:errcheck
+					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/organizations/name/my-org":
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+					case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/organizations/org-1":
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
 					default:
-						assert.Equal(t, http.MethodPatch, r.Method)
-						assert.Equal(t, "/api/v2/organizations/org_123", r.URL.Path)
-						fmt.Fprint(w, orgJSON("org_123", "existing-org")) //nolint:errcheck
+						t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 					}
-				}))
+				})
 			},
 			wantCreated: false,
 		},
 		{
-			name:   "conflict but organization vanished",
-			config: OrganizationConfig{Name: "gone-org"},
+			name: "create returns error",
 			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					if r.Method == http.MethodPost {
-						w.WriteHeader(http.StatusConflict)
-						return
-					}
-					w.WriteHeader(http.StatusNotFound)
-				}))
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
 			},
 			wantErr: true,
 		},
 		{
-			name:   "server error on create",
-			config: OrganizationConfig{Name: "error-org"},
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusInternalServerError)
-				}))
-			},
-			wantErr: true,
-		},
-		{
-			name:        "connection refused on create",
-			config:      OrganizationConfig{Name: "my-org"},
+			name:        "connection refused",
 			setupServer: closedServer,
 			wantErr:     true,
-		},
-		{
-			name:   "update organization returns error status",
-			config: OrganizationConfig{Name: "my-org"},
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					switch r.Method {
-					case http.MethodPost:
-						w.WriteHeader(http.StatusConflict)
-					case http.MethodGet:
-						fmt.Fprint(w, orgJSON("org_123", "my-org")) //nolint:errcheck
-					default:
-						w.WriteHeader(http.StatusInternalServerError)
-						fmt.Fprint(w, `{"message":"update failed"}`) //nolint:errcheck
-					}
-				}))
-			},
-			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			defer srv.Close()
-			created, err := managementClient(t, srv).CreateOrUpdateOrganization(context.Background(), tt.config)
+			created, err := testClient(t, srv).CreateTenant(context.Background(), idp.TenantConfig{Realm: "my-org"})
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -398,7 +145,78 @@ func TestManagementClient_CreateOrUpdateOrganization(t *testing.T) {
 	}
 }
 
-func TestManagementClient_DeleteOrganization(t *testing.T) {
+func TestManagementClient_UpdateTenant(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantErr     bool
+	}{
+		{
+			name: "successful update",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					switch {
+					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/organizations/name/my-org":
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+					case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/organizations/org-1":
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+					default:
+						t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+					}
+				})
+			},
+		},
+		{
+			name: "organization not found",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusNotFound)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name: "get organization error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name: "update returns error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodGet {
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+						return
+					}
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name:        "connection refused",
+			setupServer: closedServer,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			err := testClient(t, srv).UpdateTenant(context.Background(), "my-org", idp.TenantConfig{Realm: "my-org"})
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestManagementClient_DeleteTenant(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
@@ -407,187 +225,362 @@ func TestManagementClient_DeleteOrganization(t *testing.T) {
 		{
 			name: "successful delete",
 			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					if r.Method == http.MethodGet {
-						assert.Equal(t, "/api/v2/organizations/name/my-org", r.URL.Path)
-						fmt.Fprint(w, orgJSON("org_123", "my-org")) //nolint:errcheck
-						return
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					switch {
+					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/organizations/name/my-org":
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/organizations/org-1":
+						w.WriteHeader(http.StatusNoContent)
+					default:
+						t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 					}
-					assert.Equal(t, http.MethodDelete, r.Method)
-					assert.Equal(t, "/api/v2/organizations/org_123", r.URL.Path)
-					w.WriteHeader(http.StatusNoContent)
-				}))
+				})
 			},
 		},
 		{
 			name: "organization not found is success",
 			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusNotFound)
-				}))
+				})
 			},
+		},
+		{
+			name: "delete 404 is success",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodGet {
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+						return
+					}
+					w.WriteHeader(http.StatusNotFound)
+				})
+			},
+		},
+		{
+			name: "delete returns error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodGet {
+						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+						return
+					}
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name: "get organization error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name:        "connection refused",
+			setupServer: closedServer,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			err := testClient(t, srv).DeleteTenant(context.Background(), "my-org")
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestManagementClient_TenantExists(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantExists  bool
+		wantErr     bool
+	}{
+		{
+			name: "organization exists",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "/api/v2/organizations/name/my-org", r.URL.Path)
+					json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
+				})
+			},
+			wantExists: true,
+		},
+		{
+			name: "organization not found",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusNotFound)
+				})
+			},
+			wantExists: false,
 		},
 		{
 			name: "server error",
 			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					if r.Method == http.MethodGet {
-						fmt.Fprint(w, orgJSON("org_123", "my-org")) //nolint:errcheck
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name:        "connection refused",
+			setupServer: closedServer,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			exists, err := testClient(t, srv).TenantExists(context.Background(), "my-org")
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantExists, exists)
+		})
+	}
+}
+
+func TestManagementClient_GetInitialAccessToken(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantToken   string
+		wantErr     bool
+	}{
+		{
+			name: "successful token retrieval",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {})
+			},
+			wantToken: "management-token",
+		},
+		{
+			name:        "token endpoint unreachable",
+			setupServer: closedServer,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			token, err := testClient(t, srv).GetInitialAccessToken(context.Background(), "")
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantToken, token)
+		})
+	}
+}
+
+func TestManagementClient_RefreshRegistrationToken(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantToken   string
+		wantErr     bool
+	}{
+		{
+			name: "successful token refresh",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {})
+			},
+			wantToken: "management-token",
+		},
+		{
+			name:        "token endpoint unreachable",
+			setupServer: closedServer,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			token, err := testClient(t, srv).RefreshRegistrationToken(context.Background(), "", "")
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantToken, token)
+		})
+	}
+}
+
+func TestManagementClient_GetUserByEmail(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupServer func(t *testing.T) *httptest.Server
+		wantUser    *idp.User
+		wantErr     bool
+	}{
+		{
+			name: "user found",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "/api/v2/users-by-email", r.URL.Path)
+					json.NewEncoder(w).Encode([]map[string]any{ //nolint:errcheck
+						{"user_id": "auth0|123", "email": "user@example.com", "blocked": false},
+					})
+				})
+			},
+			wantUser: &idp.User{ID: "auth0|123", Email: "user@example.com", Enabled: true},
+		},
+		{
+			name: "blocked user is disabled",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					json.NewEncoder(w).Encode([]map[string]any{ //nolint:errcheck
+						{"user_id": "auth0|123", "email": "user@example.com", "blocked": true},
+					})
+				})
+			},
+			wantUser: &idp.User{ID: "auth0|123", Email: "user@example.com", Enabled: false},
+		},
+		{
+			name: "user not found",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					json.NewEncoder(w).Encode([]map[string]any{}) //nolint:errcheck
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name: "query error",
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name:        "connection refused",
+			setupServer: closedServer,
+			wantErr:     true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := tt.setupServer(t)
+			user, err := testClient(t, srv).GetUserByEmail(context.Background(), "my-org", "user@example.com")
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantUser, user)
+		})
+	}
+}
+
+func TestManagementClient_ListUsers(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        idp.ListUsersOptions
+		setupServer func(t *testing.T) *httptest.Server
+		wantUsers   []*idp.User
+		wantErr     bool
+	}{
+		{
+			name: "list users by email option",
+			opts: idp.ListUsersOptions{Email: "user@example.com"},
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "/api/v2/users-by-email", r.URL.Path)
+					json.NewEncoder(w).Encode([]map[string]any{ //nolint:errcheck
+						{"user_id": "auth0|123", "email": "user@example.com"},
+					})
+				})
+			},
+			wantUsers: []*idp.User{{ID: "auth0|123", Email: "user@example.com", Enabled: true}},
+		},
+		{
+			name: "list users by email not found",
+			opts: idp.ListUsersOptions{Email: "missing@example.com"},
+			setupServer: func(t *testing.T) *httptest.Server {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					json.NewEncoder(w).Encode([]map[string]any{}) //nolint:errcheck
+				})
+			},
+			wantErr: true,
+		},
+		{
+			name: "list all users",
+			setupServer: func(t *testing.T) *httptest.Server {
+				call := 0
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "/api/v2/users", r.URL.Path)
+					call++
+					if call == 1 {
+						json.NewEncoder(w).Encode(map[string]any{"users": []map[string]any{ //nolint:errcheck
+							{"user_id": "auth0|1", "email": "a@example.com"},
+							{"user_id": "auth0|2", "email": "b@example.com", "blocked": true},
+						}})
 						return
 					}
-					w.WriteHeader(http.StatusInternalServerError)
-				}))
+					json.NewEncoder(w).Encode(map[string]any{"users": []map[string]any{}}) //nolint:errcheck
+				})
 			},
-			wantErr: true,
+			wantUsers: []*idp.User{
+				{ID: "auth0|1", Email: "a@example.com", Enabled: true},
+				{ID: "auth0|2", Email: "b@example.com", Enabled: false},
+			},
 		},
 		{
-			name:        "connection refused",
-			setupServer: closedServer,
-			wantErr:     true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := tt.setupServer(t)
-			defer srv.Close()
-			err := managementClient(t, srv).DeleteOrganization(context.Background(), "my-org")
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-		})
-	}
-}
-
-func TestManagementClient_ListClients(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupServer func(t *testing.T) *httptest.Server
-	}{
-		{
-			name:        "connection refused",
-			setupServer: closedServer,
-		},
-		{
-			name: "non-OK response",
+			name: "list all users error",
 			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
+				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusForbidden)
-				}))
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := tt.setupServer(t)
-			defer srv.Close()
-			_, err := managementClient(t, srv).ListClients(context.Background())
-			require.Error(t, err)
-		})
-	}
-}
-
-func TestManagementClient_GetClientByName(t *testing.T) {
-	tests := []struct {
-		name        string
-		clientName  string
-		setupServer func(t *testing.T) *httptest.Server
-		wantClient  *ClientInfo
-		wantErr     bool
-	}{
-		{
-			name:       "client found",
-			clientName: "my-client",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, "/api/v2/clients", r.URL.Path)
-					fmt.Fprint(w, listClientsJSON(pageOf(r))) //nolint:errcheck
-				}))
-			},
-			wantClient: &ClientInfo{ClientID: "client-id-1", Name: "my-client"},
-		},
-		{
-			name:       "client not found",
-			clientName: "missing-client",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					fmt.Fprint(w, `{"start":0,"limit":50,"total":0,"clients":[]}`) //nolint:errcheck
-				}))
-			},
-			wantClient: nil,
-		},
-		{
-			name:       "list error",
-			clientName: "any",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusInternalServerError)
-				}))
+				})
 			},
 			wantErr: true,
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			srv := tt.setupServer(t)
-			defer srv.Close()
-			info, err := managementClient(t, srv).GetClientByName(context.Background(), tt.clientName)
-			if tt.wantErr {
-				require.Error(t, err)
-				assert.Nil(t, info)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantClient, info)
-		})
-	}
-}
-
-func TestManagementClient_GetClientSecret(t *testing.T) {
-	tests := []struct {
-		name        string
-		setupServer func(t *testing.T) *httptest.Server
-		wantSecret  string
-		wantErr     bool
-	}{
 		{
 			name:        "connection refused",
 			setupServer: closedServer,
 			wantErr:     true,
 		},
-		{
-			name: "non-200 response",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusNotFound)
-				}))
-			},
-			wantErr: true,
-		},
-		{
-			name: "success",
-			setupServer: func(t *testing.T) *httptest.Server {
-				return httptest.NewServer(withToken(t, func(w http.ResponseWriter, r *http.Request) {
-					assert.Equal(t, "/api/v2/clients/client-id-1", r.URL.Path)
-					assert.Equal(t, "client_secret", r.URL.Query().Get("fields"))
-					fmt.Fprint(w, `{"client_secret":"my-secret"}`) //nolint:errcheck
-				}))
-			},
-			wantSecret: "my-secret",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
-			defer srv.Close()
-			secret, err := managementClient(t, srv).GetClientSecret(context.Background(), "client-id-1")
+			users, err := testClient(t, srv).ListUsers(context.Background(), "my-org", tt.opts)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantSecret, secret)
+			assert.Equal(t, tt.wantUsers, users)
 		})
 	}
+}
+
+func TestManagementClient_Endpoints(t *testing.T) {
+	c := NewManagementClient(context.Background(), "https://tenant.auth0.com", "id", "secret")
+	assert.Equal(t, "https://tenant.auth0.com/", c.IssuerURL(""))
+	assert.Equal(t, "https://tenant.auth0.com/.well-known/jwks.json", c.JWKSURL(""))
+	assert.Equal(t, "https://tenant.auth0.com/authorize", c.AuthorizationEndpoint(""))
+	assert.Equal(t, "https://tenant.auth0.com/oauth/token", c.TokenEndpoint(""))
+}
+
+func TestDeref(t *testing.T) {
+	s := "value"
+	assert.Equal(t, "value", deref(&s))
+	assert.Equal(t, "", deref(nil))
 }
