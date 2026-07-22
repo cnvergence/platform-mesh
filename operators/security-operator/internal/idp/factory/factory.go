@@ -29,7 +29,7 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 )
 
-func Create2LeggedProvider(cfg *config.Config, tenant string) (idp.Provider, error) {
+func Create2LeggedProvider(cfg *config.Config) (idp.Provider, error) {
 	switch "TODO: cfg.IDP.Implementation" {
 	case "keycloak":
 		ctx := context.Background()
@@ -48,14 +48,14 @@ func Create2LeggedProvider(cfg *config.Config, tenant string) (idp.Provider, err
 
 		baseHTTPClient := cCfg.Client(ctx)
 
-		return keycloak.New(baseHTTPClient, cfg.Keycloak.BaseURL, tenant, createKeycloakConfig(cfg)), nil
+		return keycloak.New(baseHTTPClient, cfg.Keycloak.BaseURL, createKeycloakConfig(cfg)), nil
 
 	default:
 		panic("invalid IDP provider")
 	}
 }
 
-func Create3LeggedProvider(cfg *config.InitContainerConfiguration, globalConfig *config.Config, password string, tenant string) (idp.Provider, error) {
+func Create3LeggedProvider(cfg *config.InitContainerConfiguration, globalConfig *config.Config, password string) (idp.Provider, error) {
 	switch "TODO: cfg.IDP.Implementation" {
 	case "keycloak":
 		ctx := context.Background()
@@ -78,7 +78,7 @@ func Create3LeggedProvider(cfg *config.InitContainerConfiguration, globalConfig 
 
 		httpClient := oauthCfg.Client(ctx, token)
 
-		return keycloak.New(httpClient, cfg.IDPBaseURL, "master", createKeycloakConfig(globalConfig)), nil
+		return keycloak.New(httpClient, cfg.IDPBaseURL, createKeycloakConfig(globalConfig)), nil
 
 	default:
 		panic("invalid IDP provider")

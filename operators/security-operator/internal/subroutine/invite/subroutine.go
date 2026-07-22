@@ -111,7 +111,7 @@ func (s *subroutine) Process(ctx context.Context, obj ctrlruntimeclient.Object) 
 		return subroutines.OK(), fmt.Errorf("failed to get oidc client for organization %s", realm)
 	}
 
-	client, err := s.provider.GetClientByID(ctx, oidcClient.ClientID)
+	client, err := s.provider.GetClientByID(ctx, realm, oidcClient.ClientID)
 	if err != nil {
 		log.Err(err).Msg("Failed to get client by ID")
 		return subroutines.OK(), err

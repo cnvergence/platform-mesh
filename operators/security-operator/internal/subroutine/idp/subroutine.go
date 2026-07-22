@@ -74,8 +74,8 @@ func New(ctx context.Context, cfg *config.Config, mgr mcmanager.Manager, kcpClie
 	}, nil
 }
 
-func (s *subroutine) newIDProvider(realmName string) (idp.Provider, error) {
-	return factory.Create2LeggedProvider(s.cfg, realmName)
+func (s *subroutine) newIDProvider() (idp.Provider, error) {
+	return factory.Create2LeggedProvider(s.cfg)
 }
 
 func (s *subroutine) Finalize(ctx context.Context, obj ctrlruntimeclient.Object) (subroutines.Result, error) {
@@ -91,7 +91,7 @@ func (s *subroutine) finalize(ctx context.Context, obj ctrlruntimeclient.Object)
 	log := logger.LoadLoggerFromContext(ctx)
 	realmName := idpToDelete.Name
 
-	provider, err := s.newIDProvider(realmName)
+	provider, err := s.newIDProvider()
 	if err != nil {
 		return subroutines.OK(), fmt.Errorf("failed to create ID provider: %w", err)
 	}
@@ -118,7 +118,7 @@ func (s *subroutine) finalize(ctx context.Context, obj ctrlruntimeclient.Object)
 			continue
 		}
 
-		err = provider.DeleteClient(ctx, clientIDToDelete, registrationClientURIToDelete, registrationAccessToken)
+		err = provider.DeleteClient(ctx, realmName, clientIDToDelete, registrationClientURIToDelete, registrationAccessToken)
 		if err != nil && !dcr.IsNotFound(err) {
 			return subroutines.OK(), fmt.Errorf("failed to delete oidc client: %w", err)
 		}
@@ -173,7 +173,7 @@ func (s *subroutine) process(ctx context.Context, obj ctrlruntimeclient.Object) 
 	kcpClient := cl.GetClient()
 
 	realmName := idpConfig.Name
-	provider, err := s.newIDProvider(realmName)
+	provider, err := s.newIDProvider()
 	if err != nil {
 		return subroutines.OK(), fmt.Errorf("failed to create ID provider: %w", err)
 	}
@@ -182,7 +182,7 @@ func (s *subroutine) process(ctx context.Context, obj ctrlruntimeclient.Object) 
 		return subroutines.OK(), err
 	}
 
-	if err := s.deleteRemovedClients(ctx, idpConfig, provider, log); err != nil {
+	if err := s.deleteRemovedClients(ctx, realmName, idpConfig, provider, log); err != nil {
 		return subroutines.OK(), err
 	}
 
@@ -233,7 +233,7 @@ func (s *subroutine) ensureRealm(ctx context.Context, provider idp.Provider, rea
 	return nil
 }
 
-func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcorev1alpha1.IdentityProviderConfiguration, provider idp.Provider, log *logger.Logger) error {
+func (s *subroutine) deleteRemovedClients(ctx context.Context, realmName string, idpConfig *pmcorev1alpha1.IdentityProviderConfiguration, provider idp.Provider, log *logger.Logger) error {
 	for clientName, managedClient := range idpConfig.Status.ManagedClients {
 		exists := slices.ContainsFunc(idpConfig.Spec.Clients,
 			func(c pmcorev1alpha1.IdentityProviderClientConfig) bool {
@@ -255,7 +255,7 @@ func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcore
 			return fmt.Errorf("failed to get registration access token from secret: %w", err)
 		}
 
-		if err := provider.DeleteClient(ctx, managedClient.ClientID, managedClient.RegistrationClientURI, registrationAccessToken); err != nil && !dcr.IsNotFound(err) {
+		if err := provider.DeleteClient(ctx, realmName, managedClient.ClientID, managedClient.RegistrationClientURI, registrationAccessToken); err != nil && !dcr.IsNotFound(err) {
 			return fmt.Errorf("failed to delete client %s: %w", clientName, err)
 		}
 
@@ -278,7 +278,7 @@ func (s *subroutine) deleteRemovedClients(ctx context.Context, idpConfig *pmcore
 }
 
 func (s *subroutine) ensureClient(ctx context.Context, ipc *pmcorev1alpha1.IdentityProviderConfiguration, clientConfig *pmcorev1alpha1.IdentityProviderClientConfig, realmName string, provider idp.Provider) (dcr.ClientInformation, error) {
-	existingClient, err := provider.GetClientByName(ctx, clientConfig.ClientName)
+	existingClient, err := provider.GetClientByName(ctx, realmName, clientConfig.ClientName)
 	if err != nil {
 		return dcr.ClientInformation{}, fmt.Errorf("failed to check if client exists: %w", err)
 	}
@@ -297,7 +297,7 @@ func (s *subroutine) ensureClient(ctx context.Context, ipc *pmcorev1alpha1.Ident
 	}
 
 	if existingClient == nil {
-		return provider.CreateClient(ctx, metadata)
+		return provider.CreateClient(ctx, realmName, metadata)
 	}
 
 	// Client exists, update it
@@ -308,7 +308,7 @@ func (s *subroutine) ensureClient(ctx context.Context, ipc *pmcorev1alpha1.Ident
 
 	registrationClientURI := ipc.Status.ManagedClients[clientConfig.ClientName].RegistrationClientURI
 	if registrationClientURI == "" {
-		registrationClientURI = provider.RegistrationEndpoint(existingClient.ClientID)
+		registrationClientURI = provider.RegistrationEndpoint(realmName, existingClient.ClientID)
 	}
 
 	metadata.ClientID = ipc.Status.ManagedClients[clientConfig.ClientName].ClientID
@@ -316,7 +316,7 @@ func (s *subroutine) ensureClient(ctx context.Context, ipc *pmcorev1alpha1.Ident
 		metadata.ClientID = existingClient.ClientID
 	}
 
-	return provider.UpdateClient(ctx, registrationClientURI, registrationAccessToken, metadata)
+	return provider.UpdateClient(ctx, realmName, registrationClientURI, registrationAccessToken, metadata)
 }
 
 func (s *subroutine) readRegistrationAccessToken(ctx context.Context, secretRef corev1.SecretReference) (string, error) {

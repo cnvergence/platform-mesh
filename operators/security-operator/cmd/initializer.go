@@ -114,7 +114,7 @@ var initializerCmd = &cobra.Command{
 
 		kcpClientGetter := iclient.NewConfigSchemeKCPClientGetter(restCfg, scheme)
 
-		idpProvider, err := factory.Create2LeggedProvider(&operatorCfg, "master")
+		idpProvider, err := factory.Create2LeggedProvider(&operatorCfg)
 		if err != nil {
 			log.Error().Err(err).Msg("unable to create 2-legged IDP provider")
 			return err

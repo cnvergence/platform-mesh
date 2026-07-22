@@ -43,6 +43,8 @@ var initContainerCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 
+		const realm = "master"
+
 		initContainerConfig, err := loadInitContainerConfig(&initContainerCfg)
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to load config file, using flags/env only")
@@ -60,7 +62,7 @@ var initContainerCmd = &cobra.Command{
 			return fmt.Errorf("failed to read password: %w", err)
 		}
 
-		provider, err := factory.Create3LeggedProvider(initContainerConfig, initContainerCfg, password, "master")
+		provider, err := factory.Create3LeggedProvider(initContainerConfig, &initializerCfg, password)
 		if err != nil {
 			return fmt.Errorf("failed to create IDP provider: %w", err)
 		}
@@ -72,7 +74,7 @@ var initContainerCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Kubernetes client: %w", err)
 		}
 
-		adminRole, err := provider.GetOrganizationRole(ctx, "admin")
+		adminRole, err := provider.GetOrganizationRole(ctx, realm, "admin")
 		if err != nil {
 			return fmt.Errorf("failed to get admin role: %w", err)
 		}
@@ -80,11 +82,11 @@ var initContainerCmd = &cobra.Command{
 			return fmt.Errorf("admin role not found in master realm")
 		}
 
-		existingClients, err := provider.ListClients(ctx)
+		existingClients, err := provider.ListClients(ctx, realm)
 		if err != nil {
 			return fmt.Errorf("failed to list existing clients: %w", err)
 		}
-		existingClientMap := make(map[string]*idp.ClientInfo)
+		existingClientMap := make(map[string]*idp.Client)
 		for i := range existingClients {
 			existingClientMap[existingClients[i].ClientID] = &existingClients[i]
 		}
@@ -100,7 +102,7 @@ var initContainerCmd = &cobra.Command{
 				clientUUID = existing.ID
 			} else {
 				log.Info().Str("clientID", clientCfg.Name).Msg("Creating service account client")
-				created, err := provider.CreateServiceAccountClient(ctx, idp.ServiceAccountClientConfig{
+				created, err := provider.CreateServiceAccountClient(ctx, realm, idp.ServiceAccountClientConfig{
 					ClientID:               clientCfg.Name,
 					Name:                   clientCfg.Name,
 					Enabled:                true,
@@ -113,17 +115,17 @@ var initContainerCmd = &cobra.Command{
 				clientUUID = created.ID
 			}
 
-			clientSecret, err := provider.GetClientSecret(ctx, clientUUID)
+			clientSecret, err := provider.GetClientSecret(ctx, realm, clientUUID)
 			if err != nil {
 				return fmt.Errorf("failed to get client secret for %q: %w", clientCfg.Name, err)
 			}
 
-			serviceAccountUser, err := provider.GetServiceAccountUser(ctx, clientUUID)
+			serviceAccountUser, err := provider.GetServiceAccountUser(ctx, realm, clientUUID)
 			if err != nil {
 				return fmt.Errorf("failed to get service account user for %q: %w", clientCfg.Name, err)
 			}
 
-			if err := provider.AssignRoleToUser(ctx, serviceAccountUser.ID, *adminRole); err != nil {
+			if err := provider.AssignRoleToUser(ctx, realm, serviceAccountUser.ID, *adminRole); err != nil {
 				return fmt.Errorf("failed to assign admin role to %q: %w", clientCfg.Name, err)
 			}
 

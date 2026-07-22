@@ -25,13 +25,13 @@ import (
 // Provider defines the interface for an external OIDC provider
 type Provider interface {
 	// Client Registration (DCR - RFC 7591/7592)
-	GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error)
-	CreateClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error)
-	UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error)
-	DeleteClient(ctx context.Context, clientID, registrationURI, registrationToken string) error
+	GetClient(ctx context.Context, orgID string, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error)
+	CreateClient(ctx context.Context, orgID string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error)
+	UpdateClient(ctx context.Context, orgID string, registrationURI, registrationToken string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error)
+	DeleteClient(ctx context.Context, orgID string, clientID, registrationURI, registrationToken string) error
 
-	GetClientByName(ctx context.Context, clientName string) (*Client, error)
-	GetClientByID(ctx context.Context, clientID string) (*Client, error)
+	GetClientByName(ctx context.Context, orgID string, clientName string) (*Client, error)
+	GetClientByID(ctx context.Context, orgID string, clientID string) (*Client, error)
 
 	// Realm (org) Management (provider-specific)
 	CreateOrganization(ctx context.Context, orgID string, config OrganizationConfig) error
@@ -42,7 +42,7 @@ type Provider interface {
 
 	// Token Management
 	CreateTokenProvider(orgID string) dcr.TokenProviderFunc
-	RefreshRegistrationToken(ctx context.Context, orgID, clientID string) (string, error)
+	CreateTokenRefresher(orgID string) dcr.TokenRefresherFunc
 
 	// User Management (SCIM or Userinfo)
 	GetUserByEmail(ctx context.Context, orgID, email string) (*User, error)
@@ -55,13 +55,13 @@ type Provider interface {
 	AuthorizationEndpoint(orgID string) string
 	TokenEndpoint(orgID string) string
 
-	RegistrationEndpoint(clientID string) string
-	GetOrganizationRole(ctx context.Context, roleName string) (*Role, error)
-	ListClients(ctx context.Context) ([]Client, error)
-	CreateServiceAccountClient(ctx context.Context, config ServiceAccountClientConfig) (*Client, error)
-	GetClientSecret(ctx context.Context, clientID string) (string, error)
-	GetServiceAccountUser(ctx context.Context, clientID string) (*User, error)
-	AssignRoleToUser(ctx context.Context, serviceAccountUserID string, adminRole Role) error
+	RegistrationEndpoint(orgID string, clientID string) string
+	GetOrganizationRole(ctx context.Context, orgID string, roleName string) (*Role, error)
+	ListClients(ctx context.Context, orgID string) ([]Client, error)
+	CreateServiceAccountClient(ctx context.Context, orgID string, config ServiceAccountClientConfig) (*Client, error)
+	GetClientSecret(ctx context.Context, orgID string, clientID string) (string, error)
+	GetServiceAccountUser(ctx context.Context, orgID string, clientID string) (*User, error)
+	AssignRoleToUser(ctx context.Context, orgID string, serviceAccountUserID string, adminRole Role) error
 }
 
 type OrganizationConfig struct {

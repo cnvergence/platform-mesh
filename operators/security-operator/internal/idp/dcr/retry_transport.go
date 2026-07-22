@@ -36,18 +36,16 @@ func ClientIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-type TokenRefresher interface {
-	RefreshToken(ctx context.Context, clientID string) (newToken string, err error)
-}
+type TokenRefresherFunc func(ctx context.Context, clientID string) (newToken string, err error)
 
 // RetryTransport wraps an http.RoundTripper and retries requests on 401
 // after refreshing the authentication token via TokenRefresher.
 type RetryTransport struct {
 	Base           http.RoundTripper
-	TokenRefresher TokenRefresher
+	TokenRefresher TokenRefresherFunc
 }
 
-func NewRetryTransport(base http.RoundTripper, refresher TokenRefresher) *RetryTransport {
+func NewRetryTransport(base http.RoundTripper, refresher TokenRefresherFunc) *RetryTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -72,7 +70,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return resp, nil
 	}
 
-	newToken, err := t.TokenRefresher.RefreshToken(req.Context(), clientID)
+	newToken, err := t.TokenRefresher(req.Context(), clientID)
 	if err != nil {
 		return resp, nil //nolint:nilerr
 	}
