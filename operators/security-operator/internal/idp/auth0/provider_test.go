@@ -99,19 +99,13 @@ func TestManagementClient_CreateTenant(t *testing.T) {
 			wantCreated: true,
 		},
 		{
-			name: "organization updated on conflict",
+			name: "organization exists on conflict",
 			setupServer: func(t *testing.T) *httptest.Server {
 				return testServer(t, func(w http.ResponseWriter, r *http.Request) {
-					switch {
-					case r.Method == http.MethodPost && r.URL.Path == "/api/v2/organizations":
-						w.WriteHeader(http.StatusConflict)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/organizations/name/my-org":
-						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
-					case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/organizations/org-1":
-						json.NewEncoder(w).Encode(map[string]any{"id": "org-1", "name": "my-org"}) //nolint:errcheck
-					default:
+					if r.Method != http.MethodPost || r.URL.Path != "/api/v2/organizations" {
 						t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 					}
+					w.WriteHeader(http.StatusConflict)
 				})
 			},
 			wantCreated: false,

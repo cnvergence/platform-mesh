@@ -127,7 +127,7 @@ func (c *ManagementClient) CreateTenant(ctx context.Context, config idp.TenantCo
 		return false, fmt.Errorf("failed to create organization %q: %w", config.Realm, err)
 	}
 
-	return false, c.UpdateTenant(ctx, config.Realm, config)
+	return false, nil
 }
 
 func (c *ManagementClient) UpdateTenant(ctx context.Context, tenantID string, config idp.TenantConfig) error {
