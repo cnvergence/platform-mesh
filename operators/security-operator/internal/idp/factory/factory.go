@@ -19,6 +19,7 @@ package factory
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/coreos/go-oidc"
 	"go.platform-mesh.io/security-operator/internal/config"
@@ -47,14 +48,14 @@ func Create2LeggedProvider(cfg *config.Config, tenant string) (idp.Provider, err
 
 		baseHTTPClient := cCfg.Client(ctx)
 
-		return keycloak.New(baseHTTPClient, cfg.Keycloak.BaseURL, tenant, keycloak.Config{ /* TODO */ }), nil
+		return keycloak.New(baseHTTPClient, cfg.Keycloak.BaseURL, tenant, createKeycloakConfig(cfg)), nil
 
 	default:
 		panic("invalid IDP provider")
 	}
 }
 
-func Create3LeggedProvider(cfg *config.InitContainerConfiguration, password string, tenant string) (idp.Provider, error) {
+func Create3LeggedProvider(cfg *config.InitContainerConfiguration, globalConfig *config.Config, password string, tenant string) (idp.Provider, error) {
 	switch "TODO: cfg.IDP.Implementation" {
 	case "keycloak":
 		ctx := context.Background()
@@ -77,9 +78,39 @@ func Create3LeggedProvider(cfg *config.InitContainerConfiguration, password stri
 
 		httpClient := oauthCfg.Client(ctx, token)
 
-		return keycloak.New(httpClient, cfg.IDPBaseURL, "master", keycloak.Config{ /* TODO */ }), nil
+		return keycloak.New(httpClient, cfg.IDPBaseURL, "master", createKeycloakConfig(globalConfig)), nil
 
 	default:
 		panic("invalid IDP provider")
 	}
+}
+
+func createKeycloakConfig(cfg *config.Config) keycloak.Config {
+	return keycloak.Config{
+		AccessTokenLifespan: time.Duration(cfg.IDP.AccessTokenLifespan) * time.Second,
+		SetDefaultPassword:  cfg.SetDefaultPassword,
+		SMTP:                createKeycloakSMTP(cfg.IDP),
+	}
+}
+
+func createKeycloakSMTP(cfg config.IDPConfig) *keycloak.SMTPConfig {
+	if cfg.SMTPServer == "" {
+		return nil
+	}
+
+	smtp := &keycloak.SMTPConfig{
+		Host:     cfg.SMTPServer,
+		Port:     cfg.SMTPPort,
+		From:     cfg.FromAddress,
+		SSL:      cfg.SSL,
+		StartTLS: cfg.StartTLS,
+	}
+
+	if cfg.SMTPUser != "" {
+		smtp.Auth = true
+		smtp.User = cfg.SMTPUser
+		smtp.Password = cfg.SMTPPassword
+	}
+
+	return smtp
 }

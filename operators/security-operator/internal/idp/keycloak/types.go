@@ -101,7 +101,7 @@ type realmConfig struct {
 
 type SMTPConfig struct {
 	Host     string `json:"host,omitempty"`
-	Port     string `json:"port,omitempty"`
+	Port     int    `json:"port,omitempty"`
 	From     string `json:"from,omitempty"`
 	SSL      bool   `json:"ssl,omitempty"`
 	StartTLS bool   `json:"starttls,omitempty"`
