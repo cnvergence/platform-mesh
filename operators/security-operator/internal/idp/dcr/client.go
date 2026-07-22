@@ -33,7 +33,7 @@ type Client interface {
 
 type client struct {
 	httpClient    *http.Client
-	tokenProvider TokenProvider
+	tokenProvider TokenProviderFunc
 }
 
 func NewClient(opts ...Option) Client {
@@ -53,7 +53,7 @@ func (c *client) Register(ctx context.Context, registrationEndpoint string, meta
 		return ClientInformation{}, ErrNoTokenProvider
 	}
 
-	token, err := c.tokenProvider.TokenForRegistration(ctx)
+	token, err := c.tokenProvider(ctx)
 	if err != nil {
 		return ClientInformation{}, fmt.Errorf("failed to get registration token: %w", err)
 	}

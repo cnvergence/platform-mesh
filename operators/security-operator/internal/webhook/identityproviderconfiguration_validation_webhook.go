@@ -30,7 +30,7 @@ import (
 )
 
 type realmChecker interface {
-	TenantExists(ctx context.Context, tenantID string) (bool, error)
+	OrganizationExists(ctx context.Context, tenantID string) (bool, error)
 }
 
 // SetupIdentityProviderConfigurationValidatingWebhookWithManager registers a validating webhook that prevents
@@ -63,7 +63,7 @@ func (v *identityProviderConfigurationValidator) ValidateCreate(ctx context.Cont
 		return nil, fmt.Errorf("creation of IdentityProviderConfiguration for tenant %q is not allowed", tenantName)
 	}
 
-	exists, err := v.provider.TenantExists(ctx, tenantName)
+	exists, err := v.provider.OrganizationExists(ctx, tenantName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check tenant existence: %w", err)
 	}

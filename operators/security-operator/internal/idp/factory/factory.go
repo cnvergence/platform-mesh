@@ -47,7 +47,7 @@ func Create2LeggedProvider(cfg *config.Config, tenant string) (idp.Provider, err
 
 		baseHTTPClient := cCfg.Client(ctx)
 
-		return keycloak.New(baseHTTPClient, cfg.Keycloak.BaseURL, tenant), nil
+		return keycloak.New(baseHTTPClient, cfg.Keycloak.BaseURL, tenant, keycloak.Config{ /* TODO */ }), nil
 
 	default:
 		panic("invalid IDP provider")
@@ -77,7 +77,7 @@ func Create3LeggedProvider(cfg *config.InitContainerConfiguration, password stri
 
 		httpClient := oauthCfg.Client(ctx, token)
 
-		return keycloak.New(httpClient, cfg.IDPBaseURL, "master"), nil
+		return keycloak.New(httpClient, cfg.IDPBaseURL, "master", keycloak.Config{ /* TODO */ }), nil
 
 	default:
 		panic("invalid IDP provider")

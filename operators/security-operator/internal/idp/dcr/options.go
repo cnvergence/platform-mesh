@@ -22,13 +22,11 @@ import (
 	"time"
 )
 
-type TokenProvider interface {
-	TokenForRegistration(ctx context.Context) (string, error)
-}
+type TokenProviderFunc func(ctx context.Context) (string, error)
 
 type clientOptions struct {
 	httpClient    *http.Client
-	tokenProvider TokenProvider
+	tokenProvider TokenProviderFunc
 }
 
 type Option func(*clientOptions)
@@ -39,7 +37,7 @@ func WithHTTPClient(c *http.Client) Option {
 	}
 }
 
-func WithTokenProvider(p TokenProvider) Option {
+func WithTokenProvider(p TokenProviderFunc) Option {
 	return func(o *clientOptions) {
 		o.tokenProvider = p
 	}

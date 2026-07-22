@@ -26,73 +26,51 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/rs/zerolog/log"
-
 	"go.platform-mesh.io/security-operator/internal/idp"
 	"go.platform-mesh.io/security-operator/internal/idp/dcr"
-	"go.platform-mesh.io/security-operator/internal/subroutine/invite"
 )
 
 const maxErrorBodySize = 4096
 
-const (
-	RequiredActionVerifyEmail    string = "VERIFY_EMAIL"
-	RequiredActionUpdatePassword string = "UPDATE_PASSWORD"
-	UserDefaultPasswordType      string = "password"
-	UserDefaultPasswordValue     string = "password"
-)
-
 type AdminClient struct {
 	httpClient *http.Client
+	cfg        Config
 	baseURL    string
 	realm      string
 }
 
 var (
 	_ idp.Provider       = (*AdminClient)(nil)
-	_ dcr.TokenProvider  = (*AdminClient)(nil)
 	_ dcr.TokenRefresher = (*AdminClient)(nil)
 )
 
-func New(httpClient *http.Client, baseURL, realm string) *AdminClient {
+func New(httpClient *http.Client, baseURL, realm string, cfg Config) *AdminClient {
 	return &AdminClient{
 		httpClient: httpClient,
+		cfg:        cfg,
 		baseURL:    strings.TrimSuffix(baseURL, "/"),
 		realm:      realm,
 	}
 }
 
-func (c *AdminClient) GetInitialAccessToken(ctx context.Context, _ string) (string, error) {
-	return c.TokenForRegistration(ctx)
-}
+func (c *AdminClient) CreateTokenProvider(orgID string) dcr.TokenProviderFunc {
+	return func(ctx context.Context) (string, error) {
+		url := fmt.Sprintf("/admin/realms/%s/clients-initial-access", orgID)
 
-func (c *AdminClient) TokenForRegistration(ctx context.Context) (string, error) {
-	url := fmt.Sprintf("%s/admin/realms/%s/clients-initial-access", c.baseURL, c.realm)
+		responseData, _, err := c.doRequest(ctx, http.MethodPost, url, []byte("{}"))
+		if err != nil {
+			return "", fmt.Errorf("failed to request initial access token: %w", err)
+		}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader("{}"))
-	if err != nil {
-		return "", fmt.Errorf("failed to create initial access token request: %w", err)
+		var response struct {
+			Token string `json:"token"`
+		}
+		if err := json.Unmarshal(responseData, &response); err != nil {
+			return "", fmt.Errorf("failed to parse initial access token response: %w", err)
+		}
+
+		return response.Token, nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to request initial access token: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode != http.StatusOK {
-		return "", readErrorResponse(resp, "create initial access token")
-	}
-
-	var response struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return "", fmt.Errorf("failed to parse initial access token response: %w", err)
-	}
-
-	return response.Token, nil
 }
 
 func (c *AdminClient) RefreshRegistrationToken(ctx context.Context, _, clientID string) (string, error) {
@@ -100,32 +78,26 @@ func (c *AdminClient) RefreshRegistrationToken(ctx context.Context, _, clientID 
 }
 
 func (c *AdminClient) RefreshToken(ctx context.Context, clientID string) (string, error) {
-	clientUUID, err := c.resolveClientUUID(ctx, clientID)
+	clientUUID, err := c.GetClientByID(ctx, clientID)
 	if err != nil {
 		return "", err
 	}
 
-	url := fmt.Sprintf("%s/admin/realms/%s/clients/%s/registration-access-token", c.baseURL, c.realm, clientUUID)
+	url := fmt.Sprintf("/admin/realms/%s/clients/%s/registration-access-token", c.realm, clientUUID)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodPost, url, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create token regeneration request: %w", err)
+		return "", fmt.Errorf("failed to request initial access token: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to request token regeneration: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", readErrorResponse(resp, "regenerate registration access token")
+	if statusCode != http.StatusOK && statusCode != http.StatusCreated {
+		return "", errorResponse(responseData, statusCode, "regenerate registration access token")
 	}
 
 	var response struct {
 		RegistrationAccessToken string `json:"registrationAccessToken"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+	if err := json.Unmarshal(responseData, &response); err != nil {
 		return "", fmt.Errorf("failed to parse token regeneration response: %w", err)
 	}
 
@@ -136,265 +108,167 @@ func (c *AdminClient) RegistrationEndpoint(clientID string) string {
 	return fmt.Sprintf("%s/realms/%s/clients-registrations/openid-connect/%s", c.baseURL, c.realm, clientID)
 }
 
-func (c *AdminClient) TenantExists(ctx context.Context, tenantID string) (bool, error) {
-	return c.RealmExists(ctx, tenantID)
-}
+func (c *AdminClient) OrganizationExists(ctx context.Context, orgID string) (bool, error) {
+	url := fmt.Sprintf("/admin/realms/%s", orgID)
 
-func (c *AdminClient) RealmExists(ctx context.Context, realmName string) (bool, error) {
-	url := fmt.Sprintf("%s/admin/realms/%s", c.baseURL, realmName)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to create get realm request: %w", err)
+		return false, fmt.Errorf("failed to request initial access token: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("failed to get realm %q: %w", realmName, err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode == http.StatusOK {
+	switch statusCode {
+	case http.StatusOK:
 		return true, nil
-	}
-	if resp.StatusCode == http.StatusNotFound {
+	case http.StatusNotFound:
 		return false, nil
+	default:
+		return false, errorResponse(responseData, statusCode, "get realm")
+	}
+}
+
+func (c *AdminClient) buildRealmConfig(orgID string, cfg idp.OrganizationConfig) ([]byte, error) {
+	ttl := int(c.cfg.AccessTokenLifespan.Seconds())
+
+	realmConfig := realmConfig{
+		Realm:                       orgID,
+		DisplayName:                 orgID,
+		Enabled:                     true,
+		LoginWithEmailAllowed:       true,
+		RegistrationEmailAsUsername: true,
+		RegistrationAllowed:         cfg.RegistrationAllowed,
+		SSOSessionIdleTimeout:       ttl,
+		AccessTokenLifespan:         ttl,
+		SMTPServer:                  c.cfg.SMTP,
 	}
 
-	return false, readErrorResponse(resp, "get realm")
+	return json.Marshal(realmConfig)
 }
 
-func (c *AdminClient) CreateTenant(ctx context.Context, config idp.TenantConfig) (created bool, err error) {
-	return c.CreateOrUpdateRealm(ctx, RealmConfig{
-		Realm: config.Realm,
-	})
+func (c *AdminClient) CreateOrganization(ctx context.Context, orgID string, cfg idp.OrganizationConfig) error {
+	body, err := c.buildRealmConfig(orgID, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal realm config: %w", err)
+	}
+
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodPost, "/admin/realms", body)
+	if err != nil {
+		return fmt.Errorf("failed to do request: %w", err)
+	}
+
+	if statusCode == http.StatusCreated {
+		return nil
+	}
+
+	return errorResponse(responseData, statusCode, "create realm")
 }
 
-func (c *AdminClient) UpdateTenant(ctx context.Context, _ string, config idp.TenantConfig) error {
-	_, err := c.CreateOrUpdateRealm(ctx, RealmConfig{
-		Realm: config.Realm,
-	})
-	return err
+func (c *AdminClient) UpdateOrganization(ctx context.Context, orgID string, cfg idp.OrganizationConfig) error {
+	body, err := c.buildRealmConfig(orgID, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal realm config: %w", err)
+	}
+
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodPut, fmt.Sprintf("/admin/realms/%s", orgID), body)
+	if err != nil {
+		return fmt.Errorf("failed to do request: %w", err)
+	}
+
+	if statusCode == http.StatusNoContent || statusCode == http.StatusOK {
+		return nil
+	}
+
+	return errorResponse(responseData, statusCode, "update realm")
 }
 
-func (c *AdminClient) EnsureTenant(ctx context.Context, tenantName string, registrationAllowed bool) (created bool, err error) {
-	// realmConfig := keycloak.RealmConfig{
-	// 	Realm:                       realmName,
-	// 	DisplayName:                 realmName,
-	// 	Enabled:                     true,
-	// 	LoginWithEmailAllowed:       true,
-	// 	RegistrationEmailAsUsername: true,
-	// 	RegistrationAllowed:         registrationAllowed,
-	// 	SSOSessionIdleTimeout:       s.cfg.IDP.AccessTokenLifespan,
-	// 	AccessTokenLifespan:         s.cfg.IDP.AccessTokenLifespan,
-	// }
-
-	// if s.cfg.IDP.SMTPServer != "" {
-	// 	smtpConfig := &keycloak.SMTPConfig{
-	// 		Host:     s.cfg.IDP.SMTPServer,
-	// 		Port:     fmt.Sprintf("%d", s.cfg.IDP.SMTPPort),
-	// 		From:     s.cfg.IDP.FromAddress,
-	// 		SSL:      s.cfg.IDP.SSL,
-	// 		StartTLS: s.cfg.IDP.StartTLS,
-	// 	}
-
-	// 	if s.cfg.IDP.SMTPUser != "" {
-	// 		smtpConfig.Auth = true
-	// 		smtpConfig.User = s.cfg.IDP.SMTPUser
-	// 		smtpConfig.Password = s.cfg.IDP.SMTPPassword
-	// 	}
-
-	// 	realmConfig.SMTPServer = smtpConfig
-	// }
-
-	return c.CreateOrUpdateRealm(ctx, RealmConfig{
-		Realm: tenantName,
-	})
-}
-
-func (c *AdminClient) CreateOrUpdateRealm(ctx context.Context, config RealmConfig) (created bool, err error) {
-	body, err := json.Marshal(config)
+func (c *AdminClient) EnsureOrganization(ctx context.Context, orgID string, cfg idp.OrganizationConfig) (created bool, err error) {
+	body, err := c.buildRealmConfig(orgID, cfg)
 	if err != nil {
 		return false, fmt.Errorf("failed to marshal realm config: %w", err)
 	}
 
-	createURL := fmt.Sprintf("%s/admin/realms", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, createURL, bytes.NewReader(body))
+	// try creating first
+	_, statusCode, err := c.doRequest(ctx, http.MethodPost, "/admin/realms", body)
 	if err != nil {
-		return false, fmt.Errorf("failed to create realm request: %w", err)
+		return false, fmt.Errorf("failed to do request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return false, fmt.Errorf("failed to create realm: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode == http.StatusCreated {
+	if statusCode == http.StatusCreated {
 		return true, nil
 	}
 
-	if resp.StatusCode == http.StatusConflict {
-		return false, c.updateRealm(ctx, config.Realm, body)
-	}
-
-	return false, readErrorResponse(resp, "create realm")
+	// exists already, so we update instead
+	return false, c.UpdateOrganization(ctx, orgID, cfg)
 }
 
-func (c *AdminClient) updateRealm(ctx context.Context, realmName string, body []byte) error {
-	url := fmt.Sprintf("%s/admin/realms/%s", c.baseURL, realmName)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+func (c *AdminClient) DeleteOrganization(ctx context.Context, orgID string) error {
+	url := fmt.Sprintf("/admin/realms/%s", orgID)
+
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodDelete, url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create realm update request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to update realm: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return readErrorResponse(resp, "update realm")
+		return fmt.Errorf("failed to do request: %w", err)
 	}
 
-	return nil
-}
-
-func (c *AdminClient) DeleteTenant(ctx context.Context, tenantID string) error {
-	return c.DeleteRealm(ctx, tenantID)
-}
-
-func (c *AdminClient) DeleteRealm(ctx context.Context, realmName string) error {
-	url := fmt.Sprintf("%s/admin/realms/%s", c.baseURL, realmName)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create realm delete request: %w", err)
+	if statusCode == http.StatusNoContent || statusCode == http.StatusOK || statusCode == http.StatusNotFound {
+		return nil
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to delete realm: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		return readErrorResponse(resp, "delete realm")
-	}
-
-	return nil
+	return errorResponse(responseData, statusCode, "delete realm")
 }
 
 func (c *AdminClient) GetClientByName(ctx context.Context, clientName string) (*idp.ClientInfo, error) {
+	return c.getClient(ctx, func(client idp.ClientInfo) bool {
+		return client.Name == clientName
+	})
+}
+
+func (c *AdminClient) GetClientByID(ctx context.Context, clientID string) (*idp.ClientInfo, error) {
+	client, err := c.getClient(ctx, func(client idp.ClientInfo) bool {
+		return client.ID == clientID
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if client == nil {
+		return nil, fmt.Errorf("client with client_id %q not found", clientID)
+	}
+
+	return client, nil
+}
+
+func (c *AdminClient) getClient(ctx context.Context, pred func(idp.ClientInfo) bool) (*idp.ClientInfo, error) {
 	clients, err := c.ListClients(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, client := range clients {
-		if client.Name == clientName {
+		if pred(client) {
 			return &client, nil
 		}
 	}
 
-	return nil, nil
-}
-
-func (c *AdminClient) resolveClientUUID(ctx context.Context, clientID string) (string, error) {
-	clients, err := c.ListClients(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	for _, client := range clients {
-		if client.ClientID == clientID {
-			return client.ID, nil
-		}
-	}
-
-	return "", fmt.Errorf("client with client_id %q not found", clientID)
+	return nil, fmt.Errorf("client not found")
 }
 
 func (c *AdminClient) ListClients(ctx context.Context) ([]idp.ClientInfo, error) {
-	url := fmt.Sprintf("%s/admin/realms/%s/clients", c.baseURL, c.realm)
+	url := fmt.Sprintf("/admin/realms/%s/clients", c.realm)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create get clients request: %w", err)
+		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get clients: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, readErrorResponse(resp, "get clients")
+	if statusCode != http.StatusOK {
+		return nil, errorResponse(responseData, statusCode, "get clients")
 	}
 
 	var clients []idp.ClientInfo
-	if err := json.NewDecoder(resp.Body).Decode(&clients); err != nil {
+	if err := json.Unmarshal(responseData, &clients); err != nil {
 		return nil, fmt.Errorf("failed to parse clients response: %w", err)
 	}
 
 	return clients, nil
-}
-
-func readErrorResponse(resp *http.Response, operation string) error {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
-	return fmt.Errorf("failed to %s: status %d body: %s", operation, resp.StatusCode, body)
-}
-
-type RealmConfig struct {
-	Realm                       string      `json:"realm"`
-	DisplayName                 string      `json:"displayName,omitempty"`
-	Enabled                     bool        `json:"enabled"`
-	LoginWithEmailAllowed       bool        `json:"loginWithEmailAllowed,omitempty"`
-	RegistrationEmailAsUsername bool        `json:"registrationEmailAsUsername,omitempty"`
-	RegistrationAllowed         bool        `json:"registrationAllowed,omitempty"`
-	SSOSessionIdleTimeout       int         `json:"ssoSessionIdleTimeout,omitempty"`
-	AccessTokenLifespan         int         `json:"accessTokenLifespan,omitempty"`
-	SMTPServer                  *SMTPConfig `json:"smtpServer,omitempty"`
-}
-
-type SMTPConfig struct {
-	Host     string `json:"host,omitempty"`
-	Port     string `json:"port,omitempty"`
-	From     string `json:"from,omitempty"`
-	SSL      bool   `json:"ssl,omitempty"`
-	StartTLS bool   `json:"starttls,omitempty"`
-	Auth     bool   `json:"auth,omitempty"`
-	User     string `json:"user,omitempty"`
-	Password string `json:"password,omitempty"`
-}
-
-type ClientInfo struct {
-	ID       string `json:"id"`
-	ClientID string `json:"clientId"`
-	Name     string `json:"name"`
-	Secret   string `json:"secret"`
-}
-
-type ServiceAccountClientConfig struct {
-	ClientID               string `json:"clientId"`
-	Name                   string `json:"name,omitempty"`
-	Enabled                bool   `json:"enabled"`
-	ServiceAccountsEnabled bool   `json:"serviceAccountsEnabled"`
-	PublicClient           bool   `json:"publicClient"`
-}
-
-type UserInfo struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-}
-
-type RoleInfo struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
 }
 
 func (c *AdminClient) CreateServiceAccountClient(ctx context.Context, config idp.ServiceAccountClientConfig) (*idp.ClientInfo, error) {
@@ -432,282 +306,279 @@ func (c *AdminClient) CreateServiceAccountClient(ctx context.Context, config idp
 	return &idp.ClientInfo{
 		ID:       clientUUID,
 		ClientID: config.ClientID,
-		// Name:     config.Name,
+		Name:     config.Name,
 	}, nil
 }
 
-func (c *AdminClient) GetClientSecret(ctx context.Context, clientUUID string) (string, error) {
-	url := fmt.Sprintf("%s/admin/realms/%s/clients/%s/client-secret", c.baseURL, c.realm, clientUUID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (c *AdminClient) GetClientSecret(ctx context.Context, clientID string) (string, error) {
+	// resolve public ID to internal UUID
+	client, err := c.GetClientByID(ctx, clientID)
 	if err != nil {
-		return "", fmt.Errorf("failed to create get client secret request: %w", err)
+		return "", fmt.Errorf("failed to lookup client: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("failed to get client secret: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
+	url := fmt.Sprintf("/admin/realms/%s/clients/%s/client-secret", c.realm, client.ID)
 
-	if resp.StatusCode != http.StatusOK {
-		return "", readErrorResponse(resp, "get client secret")
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to do request: %w", err)
+	}
+
+	if statusCode != http.StatusOK {
+		return "", errorResponse(responseData, statusCode, "get client secret")
 	}
 
 	var result struct {
 		Value string `json:"value"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(responseData, &result); err != nil {
 		return "", fmt.Errorf("failed to parse client secret response: %w", err)
 	}
 
 	return result.Value, nil
 }
 
-func (c *AdminClient) GetServiceAccountUser(ctx context.Context, clientUUID string) (*UserInfo, error) {
-	url := fmt.Sprintf("%s/admin/realms/%s/clients/%s/service-account-user", c.baseURL, c.realm, clientUUID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (c *AdminClient) GetServiceAccountUser(ctx context.Context, clientID string) (*idp.UserInfo, error) {
+	// resolve public ID to internal UUID
+	client, err := c.GetClientByID(ctx, clientID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create get service account user request: %w", err)
+		return nil, fmt.Errorf("failed to lookup client: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	url := fmt.Sprintf("/admin/realms/%s/clients/%s/service-account-user", c.realm, client.ID)
+
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get service account user: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, readErrorResponse(resp, "get service account user")
+		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
 
-	var user UserInfo
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+	if statusCode != http.StatusOK {
+		return nil, errorResponse(responseData, statusCode, "get service account user")
+	}
+
+	var user userInfo
+	if err := json.Unmarshal(responseData, &user); err != nil {
 		return nil, fmt.Errorf("failed to parse service account user response: %w", err)
 	}
 
-	return &user, nil
+	return user.ToPublic(), nil
 }
 
-func (c *AdminClient) GetRealmRole(ctx context.Context, roleName string) (*RoleInfo, error) {
-	url := fmt.Sprintf("%s/admin/realms/%s/roles/%s", c.baseURL, c.realm, roleName)
+func (c *AdminClient) GetOrganizationRole(ctx context.Context, roleName string) (*idp.RoleInfo, error) {
+	url := fmt.Sprintf("/admin/realms/%s/roles/%s", c.realm, roleName)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create get role request: %w", err)
+		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get role: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode == http.StatusNotFound {
+	if statusCode == http.StatusNotFound {
 		return nil, nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, readErrorResponse(resp, "get role")
+	if statusCode != http.StatusOK {
+		return nil, errorResponse(responseData, statusCode, "get role")
 	}
 
-	var role RoleInfo
-	if err := json.NewDecoder(resp.Body).Decode(&role); err != nil {
+	var role roleInfo
+	if err := json.Unmarshal(responseData, &role); err != nil {
 		return nil, fmt.Errorf("failed to parse role response: %w", err)
 	}
 
-	return &role, nil
+	return role.ToPublic(), nil
 }
 
-func (c *AdminClient) AssignRealmRoleToUser(ctx context.Context, userID string, role idp.RoleInfo) error {
-	url := fmt.Sprintf("%s/admin/realms/%s/users/%s/role-mappings/realm", c.baseURL, c.realm, userID)
+func (c *AdminClient) AssignRoleToUser(ctx context.Context, userID string, role idp.RoleInfo) error {
+	url := fmt.Sprintf("/admin/realms/%s/users/%s/role-mappings/realm", c.realm, userID)
 
-	body, err := json.Marshal([]idp.RoleInfo{role})
+	body, err := json.Marshal([]roleInfo{createRoleInfo(role)})
 	if err != nil {
 		return fmt.Errorf("failed to marshal role: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodPost, url, body)
 	if err != nil {
-		return fmt.Errorf("failed to create assign role request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to assign role: %w", err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return readErrorResponse(resp, "assign role to user")
+		return fmt.Errorf("failed to do request: %w", err)
 	}
 
-	return nil
-}
+	if statusCode == http.StatusNoContent || statusCode == http.StatusOK {
+		return nil
+	}
 
-func (c *AdminClient) RegisterClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
-	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
-	return client.Register(ctx, c.RegistrationEndpoint(metadata.ClientID), metadata)
+	return errorResponse(responseData, statusCode, "assign role to user")
 }
 
 func (c *AdminClient) GetClient(ctx context.Context, clientID, registrationURI, registrationToken string) (dcr.ClientInformation, error) {
-	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
-	return client.Read(ctx, clientID, registrationURI, registrationToken)
+	return c.getDCRClient("TODO").Read(ctx, clientID, registrationURI, registrationToken)
+}
+
+func (c *AdminClient) CreateClient(ctx context.Context, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
+	return c.getDCRClient("TODO").Register(ctx, c.RegistrationEndpoint(metadata.ClientID), metadata)
 }
 
 func (c *AdminClient) UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error) {
-	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
-	return client.Update(ctx, registrationURI, registrationToken, metadata)
+	return c.getDCRClient("TODO").Update(ctx, registrationURI, registrationToken, metadata)
 }
 
 func (c *AdminClient) DeleteClient(ctx context.Context, clientID, registrationURI, registrationToken string) error {
-	client := dcr.NewClient(dcr.WithHTTPClient(c.httpClient), dcr.WithTokenProvider(c))
-	return client.Delete(ctx, clientID, registrationURI, registrationToken)
+	return c.getDCRClient("TODO").Delete(ctx, clientID, registrationURI, registrationToken)
 }
 
-func (c *AdminClient) GetUserByEmail(_ context.Context, _, email string) (*idp.User, error) {
-	v := url.Values{
+func (c *AdminClient) getDCRClient(orgID string) dcr.Client {
+	return dcr.NewClient(
+		dcr.WithHTTPClient(c.httpClient),
+		dcr.WithTokenProvider(c.CreateTokenProvider(orgID)),
+	)
+}
+
+func (c *AdminClient) GetUserByEmail(ctx context.Context, tenantID, email string) (*idp.User, error) {
+	users, err := c.listUsers(ctx, tenantID, url.Values{
 		"email":               {email},
 		"max":                 {"1"},
 		"briefRepresentation": {"true"},
-	}
-
-	res, err := c.httpClient.Get(fmt.Sprintf("%s/admin/realms/%s/users?%s", c.baseURL, c.realm, v.Encode()))
+	})
 	if err != nil {
-		log.Err(err).Msg("Failed to query users")
-		return nil, err
-	}
-	defer res.Body.Close() //nolint:errcheck
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to query users: %s", res.Status)
+		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
 
-	var keycloakUsers []invite.KeycloakUser
-	if err = json.NewDecoder(res.Body).Decode(&keycloakUsers); err != nil {
-		return nil, err
-	}
-
-	if len(keycloakUsers) == 0 {
+	if len(users) == 0 {
 		return nil, fmt.Errorf("user not found")
 	}
 
-	credentials := make([]idp.Credential, len(keycloakUsers[0].Credentials))
-	for j, keycloakCredential := range keycloakUsers[0].Credentials {
-		credentials[j] = idp.Credential{
-			Type:      keycloakCredential.Type,
-			Value:     keycloakCredential.Value,
-			Temporary: keycloakCredential.Temporary,
-		}
-	}
-
-	user := &idp.User{
-		ID:              keycloakUsers[0].ID,
-		Email:           keycloakUsers[0].Email,
-		RequiredActions: keycloakUsers[0].RequiredActions,
-		Enabled:         keycloakUsers[0].Enabled,
-		Credentials:     credentials,
-	}
-
-	return user, nil
+	return users[0].ToPublic(), nil
 }
 
-func (c *AdminClient) ListUsers(_ context.Context, _ string, opts idp.ListUsersOptions) ([]*idp.User, error) {
-	res, err := c.httpClient.Get(fmt.Sprintf("%s/admin/realms/%s/users", c.baseURL, c.realm))
+func (c *AdminClient) ListUsers(ctx context.Context, tenantID string) ([]idp.User, error) {
+	users, err := c.listUsers(ctx, tenantID, nil)
 	if err != nil {
-		log.Err(err).Msg("Failed to query users")
+		return nil, fmt.Errorf("failed to do request: %w", err)
+	}
+
+	publicUsers := make([]idp.User, 0, len(users))
+	for _, u := range users {
+		public := u.ToPublic()
+		publicUsers = append(publicUsers, *public)
+	}
+
+	return publicUsers, nil
+}
+
+func (c *AdminClient) listUsers(ctx context.Context, orgID string, query url.Values) ([]user, error) {
+	url := fmt.Sprintf("/admin/realms/%s/users?%s", c.realm, query.Encode())
+
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to do request: %w", err)
+	}
+
+	if statusCode != http.StatusOK {
+		return nil, errorResponse(responseData, statusCode, "get users")
+	}
+
+	var users []user
+	if err = json.Unmarshal(responseData, &users); err != nil {
 		return nil, err
-	}
-	defer res.Body.Close() //nolint:errcheck
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to query users: %s", res.Status)
-	}
-
-	var keycloakUsers []invite.KeycloakUser
-	if err = json.NewDecoder(res.Body).Decode(&keycloakUsers); err != nil {
-		return nil, err
-	}
-
-	users := make([]*idp.User, len(keycloakUsers))
-	for i, keycloakUser := range keycloakUsers {
-		credentials := make([]idp.Credential, len(keycloakUser.Credentials))
-		for j, keycloakCredential := range keycloakUser.Credentials {
-			credentials[j] = idp.Credential{
-				Type:      keycloakCredential.Type,
-				Value:     keycloakCredential.Value,
-				Temporary: keycloakCredential.Temporary,
-			}
-		}
-
-		users[i] = &idp.User{
-			ID:              keycloakUser.ID,
-			Email:           keycloakUser.Email,
-			RequiredActions: keycloakUser.RequiredActions,
-			Enabled:         keycloakUser.Enabled,
-			Credentials:     credentials,
-		}
 	}
 
 	return users, nil
 }
 
-func (c *AdminClient) IssuerURL(tenantID string) string {
+func (c *AdminClient) IssuerURL(orgID string) string {
 	return fmt.Sprintf("%s/realms/%s", c.baseURL, c.realm)
 }
-func (c *AdminClient) JWKSURL(tenantID string) string {
+
+func (c *AdminClient) JWKSURL(orgID string) string {
 	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/certs", c.baseURL, c.realm)
 }
-func (c *AdminClient) AuthorizationEndpoint(tenantID string) string {
+
+func (c *AdminClient) AuthorizationEndpoint(orgID string) string {
 	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/auth", c.baseURL, c.realm)
 }
-func (c *AdminClient) TokenEndpoint(tenantID string) string {
+
+func (c *AdminClient) TokenEndpoint(orgID string) string {
 	return fmt.Sprintf("%s/realms/%s/protocol/openid-connect/token", c.baseURL, c.realm)
 }
 
-func (c *AdminClient) CreateUser(ctx context.Context, tenantID string, email string) error {
+func (c *AdminClient) CreateUser(ctx context.Context, orgID string, clientID string, email string, inviteLink string) error {
+	newUser := user{
+		Email:           email,
+		RequiredActions: []string{RequiredActionUpdatePassword, RequiredActionVerifyEmail},
+		Enabled:         true,
+	}
 
-	// v := url.Values{
-	// 	"email":               {invite.Spec.Email},
-	// 	"max":                 {"1"},
-	// 	"briefRepresentation": {"true"},
-	// }
-	// newUser := KeycloakUser{
-	// 	Email:           invite.Spec.Email,
-	// 	RequiredActions: []string{RequiredActionUpdatePassword, RequiredActionVerifyEmail},
-	// 	Enabled:         true,
-	// }
+	if c.cfg.SetDefaultPassword {
+		newUser.RequiredActions = []string{RequiredActionUpdatePassword}
+		newUser.Credentials = []credential{{
+			Type:      UserDefaultPasswordType,
+			Value:     UserDefaultPasswordValue,
+			Temporary: true,
+		}}
+	}
 
-	// if s.setDefaultPassword {
-	// 	newUser.RequiredActions = []string{RequiredActionUpdatePassword}
-	// 	newUser.Credentials = []KeycloakCredential{
-	// 		{
-	// 			Type:      UserDefaultPasswordType,
-	// 			Value:     UserDefaultPasswordValue,
-	// 			Temporary: true,
-	// 		},
-	// 	}
-	// }
+	// create users
+	var buffer bytes.Buffer
+	if err := json.NewEncoder(&buffer).Encode(&newUser); err != nil {
+		return err
+	}
 
-	// queryParams := url.Values{
-	// 	"redirect_uri": {fmt.Sprintf("https://%s.%s/", realm, s.baseDomain)},
-	// 	"client_id":    {oidcClient.ClientID},
-	// }
+	u := fmt.Sprintf("/admin/realms/%s/users", orgID)
 
-	// req, err := http.NewRequestWithContext(ctx, http.MethodPut, fmt.Sprintf("%s/admin/realms/%s/users/%s/execute-actions-email?%s", s.keycloakBaseURL, realm, newUser.ID, queryParams.Encode()), http.NoBody)
-	// if err != nil {
-	// 	return subroutines.OK(), err
-	// }
+	responseData, statusCode, err := c.doRequest(ctx, http.MethodPost, u, buffer.Bytes())
+	if err != nil {
+		return fmt.Errorf("failed to do request: %w", err)
+	}
 
-	// res, err = s.keycloak.Do(req)
-	// if err != nil {
-	// 	log.Err(err).Msg("Failed to send invite email")
-	// 	return subroutines.OK(), err
-	// }
-	// defer res.Body.Close() //nolint:errcheck
+	if statusCode != http.StatusCreated {
+		return errorResponse(responseData, statusCode, "create user")
+	}
 
-	// if res.StatusCode != http.StatusNoContent {
-	// 	return subroutines.OK(), fmt.Errorf("failed to send invite email: %s", res.Status)
-	// }
+	// send invite email
+	queryParams := url.Values{
+		"redirect_uri": {inviteLink},
+		"client_id":    {clientID},
+	}
 
-	// log.Info().Str("email", invite.Spec.Email).Msg("User created and invite sent")
+	u = fmt.Sprintf("/admin/realms/%s/users/%s/execute-actions-email?%s", orgID, newUser.ID, queryParams.Encode())
+
+	_, statusCode, err = c.doRequest(ctx, http.MethodPut, u, nil)
+	if err != nil {
+		return fmt.Errorf("failed to do request: %w", err)
+	}
+
+	if statusCode != http.StatusNoContent {
+		return errorResponse(responseData, statusCode, "send invite")
+	}
+
+	return nil
+}
+
+func (c *AdminClient) doRequest(ctx context.Context, method string, url string, body []byte) ([]byte, int, error) {
+	fullUrl := c.baseURL + url
+
+	req, err := http.NewRequestWithContext(ctx, method, fullUrl, bytes.NewReader(body))
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to do request: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	content, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return content, resp.StatusCode, nil
+}
+
+func errorResponse(body []byte, statusCode int, operation string) error {
+	return fmt.Errorf("failed to %s: status %d body: %s", operation, statusCode, body)
+}
+
+func readErrorResponse(resp *http.Response, operation string) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
+	return errorResponse(body, resp.StatusCode, operation)
 }

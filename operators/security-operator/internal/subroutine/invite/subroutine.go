@@ -35,6 +35,7 @@ import (
 
 type subroutine struct {
 	provider        idp.Provider
+	baseDomain      string
 	kcpClientGetter client.KCPClientGetter
 	limiter         workqueue.TypedRateLimiter[*pmcorev1alpha1.Invite]
 }
@@ -48,6 +49,7 @@ func New(ctx context.Context, cfg *config.Config, provider idp.Provider, kcpClie
 
 	return &subroutine{
 		provider:        provider,
+		baseDomain:      cfg.BaseDomain,
 		kcpClientGetter: kcpClientGetter,
 		limiter:         lim,
 	}, nil
@@ -123,7 +125,8 @@ func (s *subroutine) Process(ctx context.Context, obj ctrlruntimeclient.Object) 
 	log.Debug().Str("clientId", oidcClient.ClientID).Msg("Client verified")
 
 	// Create user
-	err = s.provider.CreateUser(ctx, realm, invite.Spec.Email)
+	inviteLink := fmt.Sprintf("https://%s.%s/", realm, s.baseDomain)
+	err = s.provider.CreateUser(ctx, realm, oidcClient.ClientID, invite.Spec.Email, inviteLink)
 	if err != nil {
 		log.Err(err).Msg("Failed to get create user")
 		return subroutines.OK(), err

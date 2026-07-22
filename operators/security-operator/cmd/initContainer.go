@@ -72,7 +72,7 @@ var initContainerCmd = &cobra.Command{
 			return fmt.Errorf("failed to create Kubernetes client: %w", err)
 		}
 
-		adminRole, err := provider.GetRealmRole(ctx, "admin")
+		adminRole, err := provider.GetOrganizationRole(ctx, "admin")
 		if err != nil {
 			return fmt.Errorf("failed to get admin role: %w", err)
 		}
@@ -123,7 +123,7 @@ var initContainerCmd = &cobra.Command{
 				return fmt.Errorf("failed to get service account user for %q: %w", clientCfg.Name, err)
 			}
 
-			if err := provider.AssignRealmRoleToUser(ctx, serviceAccountUser.ID, *adminRole); err != nil {
+			if err := provider.AssignRoleToUser(ctx, serviceAccountUser.ID, *adminRole); err != nil {
 				return fmt.Errorf("failed to assign admin role to %q: %w", clientCfg.Name, err)
 			}
 

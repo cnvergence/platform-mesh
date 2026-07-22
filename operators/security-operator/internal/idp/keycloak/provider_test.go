@@ -43,7 +43,7 @@ func adminClient(t *testing.T, srv *httptest.Server) *AdminClient {
 }
 
 func listClientsJSON() string {
-	b, _ := json.Marshal([]ClientInfo{{ID: "uuid-1", ClientID: "my-client"}})
+	b, _ := json.Marshal([]clientInfo{{ID: "uuid-1", ClientID: "my-client"}})
 	return string(b)
 }
 
@@ -123,7 +123,7 @@ func TestAdminClient_RefreshToken(t *testing.T) {
 					call++
 					if call == 1 {
 						assert.Equal(t, "/admin/realms/test-realm/clients", r.URL.Path)
-						json.NewEncoder(w).Encode([]ClientInfo{{ID: "uuid-123", ClientID: "my-client-id", Name: "my-client"}}) //nolint:errcheck
+						json.NewEncoder(w).Encode([]clientInfo{{ID: "uuid-123", ClientID: "my-client-id", Name: "my-client"}}) //nolint:errcheck
 						return
 					}
 					assert.Equal(t, "/admin/realms/test-realm/clients/uuid-123/registration-access-token", r.URL.Path)
@@ -137,7 +137,7 @@ func TestAdminClient_RefreshToken(t *testing.T) {
 			clientID: "unknown-client",
 			setupServer: func(t *testing.T) *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					json.NewEncoder(w).Encode([]ClientInfo{}) //nolint:errcheck
+					json.NewEncoder(w).Encode([]clientInfo{}) //nolint:errcheck
 				}))
 			},
 			wantErr: true,
@@ -150,7 +150,7 @@ func TestAdminClient_RefreshToken(t *testing.T) {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					call++
 					if call == 1 {
-						json.NewEncoder(w).Encode([]ClientInfo{{ID: "uuid-123", ClientID: "my-client-id"}}) //nolint:errcheck
+						json.NewEncoder(w).Encode([]clientInfo{{ID: "uuid-123", ClientID: "my-client-id"}}) //nolint:errcheck
 						return
 					}
 					w.WriteHeader(http.StatusInternalServerError)
@@ -296,14 +296,14 @@ func TestAdminClient_RealmExists(t *testing.T) {
 func TestAdminClient_CreateOrUpdateRealm(t *testing.T) {
 	tests := []struct {
 		name        string
-		config      RealmConfig
+		config      realmConfig
 		setupServer func(t *testing.T) *httptest.Server
 		wantCreated bool
 		wantErr     bool
 	}{
 		{
 			name:   "realm created",
-			config: RealmConfig{Realm: "new-realm", Enabled: true},
+			config: realmConfig{Realm: "new-realm", Enabled: true},
 			setupServer: func(t *testing.T) *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					assert.Equal(t, http.MethodPost, r.Method)
@@ -315,7 +315,7 @@ func TestAdminClient_CreateOrUpdateRealm(t *testing.T) {
 		},
 		{
 			name:   "realm updated on conflict",
-			config: RealmConfig{Realm: "existing-realm", Enabled: true},
+			config: realmConfig{Realm: "existing-realm", Enabled: true},
 			setupServer: func(t *testing.T) *httptest.Server {
 				call := 0
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -334,7 +334,7 @@ func TestAdminClient_CreateOrUpdateRealm(t *testing.T) {
 		},
 		{
 			name:   "server error on create",
-			config: RealmConfig{Realm: "error-realm"},
+			config: realmConfig{Realm: "error-realm"},
 			setupServer: func(t *testing.T) *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusInternalServerError)
@@ -344,13 +344,13 @@ func TestAdminClient_CreateOrUpdateRealm(t *testing.T) {
 		},
 		{
 			name:        "connection refused on create",
-			config:      RealmConfig{Realm: "my-realm"},
+			config:      realmConfig{Realm: "my-realm"},
 			setupServer: closedServer,
 			wantErr:     true,
 		},
 		{
 			name:   "connection refused on update",
-			config: RealmConfig{Realm: "my-realm"},
+			config: realmConfig{Realm: "my-realm"},
 			setupServer: func(t *testing.T) *httptest.Server {
 				call := 0
 				var srv *httptest.Server
@@ -368,7 +368,7 @@ func TestAdminClient_CreateOrUpdateRealm(t *testing.T) {
 		},
 		{
 			name:   "update realm returns error status",
-			config: RealmConfig{Realm: "my-realm"},
+			config: realmConfig{Realm: "my-realm"},
 			setupServer: func(t *testing.T) *httptest.Server {
 				call := 0
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -498,7 +498,7 @@ func TestAdminClient_GetClientByName(t *testing.T) {
 		name        string
 		clientName  string
 		setupServer func(t *testing.T) *httptest.Server
-		wantClient  *ClientInfo
+		wantClient  *clientInfo
 		wantErr     bool
 	}{
 		{
@@ -507,20 +507,20 @@ func TestAdminClient_GetClientByName(t *testing.T) {
 			setupServer: func(t *testing.T) *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					assert.Equal(t, "/admin/realms/test-realm/clients", r.URL.Path)
-					json.NewEncoder(w).Encode([]ClientInfo{ //nolint:errcheck
+					json.NewEncoder(w).Encode([]clientInfo{ //nolint:errcheck
 						{ID: "uuid-1", ClientID: "client-id-1", Name: "other-client"},
 						{ID: "uuid-2", ClientID: "client-id-2", Name: "my-client"},
 					})
 				}))
 			},
-			wantClient: &ClientInfo{ID: "uuid-2", ClientID: "client-id-2", Name: "my-client"},
+			wantClient: &clientInfo{ID: "uuid-2", ClientID: "client-id-2", Name: "my-client"},
 		},
 		{
 			name:       "client not found",
 			clientName: "missing-client",
 			setupServer: func(t *testing.T) *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					json.NewEncoder(w).Encode([]ClientInfo{}) //nolint:errcheck
+					json.NewEncoder(w).Encode([]clientInfo{}) //nolint:errcheck
 				}))
 			},
 			wantClient: nil,
@@ -598,7 +598,7 @@ func TestAdminClient_CreateServiceAccountClient(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
 			defer srv.Close()
-			info, err := adminClient(t, srv).CreateServiceAccountClient(context.Background(), ServiceAccountClientConfig{
+			info, err := adminClient(t, srv).CreateServiceAccountClient(context.Background(), serviceAccountClientConfig{
 				ClientID: "svc-client",
 				Enabled:  true,
 			})
@@ -671,7 +671,7 @@ func TestAdminClient_GetServiceAccountUser(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
-		wantUser    *UserInfo
+		wantUser    *userInfo
 		wantErr     bool
 	}{
 		{
@@ -701,10 +701,10 @@ func TestAdminClient_GetServiceAccountUser(t *testing.T) {
 			name: "success",
 			setupServer: func(t *testing.T) *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					json.NewEncoder(w).Encode(UserInfo{ID: "user-123", Username: "svc-user"}) //nolint:errcheck
+					json.NewEncoder(w).Encode(userInfo{ID: "user-123", Username: "svc-user"}) //nolint:errcheck
 				}))
 			},
-			wantUser: &UserInfo{ID: "user-123", Username: "svc-user"},
+			wantUser: &userInfo{ID: "user-123", Username: "svc-user"},
 		},
 	}
 	for _, tt := range tests {
@@ -726,7 +726,7 @@ func TestAdminClient_GetRealmRole(t *testing.T) {
 	tests := []struct {
 		name        string
 		setupServer func(t *testing.T) *httptest.Server
-		wantRole    *RoleInfo
+		wantRole    *roleInfo
 		wantErr     bool
 	}{
 		{
@@ -764,10 +764,10 @@ func TestAdminClient_GetRealmRole(t *testing.T) {
 			name: "success",
 			setupServer: func(t *testing.T) *httptest.Server {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					json.NewEncoder(w).Encode(RoleInfo{ID: "role-123", Name: "admin"}) //nolint:errcheck
+					json.NewEncoder(w).Encode(roleInfo{ID: "role-123", Name: "admin"}) //nolint:errcheck
 				}))
 			},
-			wantRole: &RoleInfo{ID: "role-123", Name: "admin"},
+			wantRole: &roleInfo{ID: "role-123", Name: "admin"},
 		},
 	}
 	for _, tt := range tests {
@@ -827,7 +827,7 @@ func TestAdminClient_AssignRealmRoleToUser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := tt.setupServer(t)
 			defer srv.Close()
-			err := adminClient(t, srv).AssignRealmRoleToUser(context.Background(), "user-123", RoleInfo{ID: "role-123", Name: "admin"})
+			err := adminClient(t, srv).AssignRealmRoleToUser(context.Background(), "user-123", roleInfo{ID: "role-123", Name: "admin"})
 			if tt.wantErr {
 				require.Error(t, err)
 				return

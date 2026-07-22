@@ -139,7 +139,7 @@ func (s *subroutine) finalize(ctx context.Context, obj ctrlruntimeclient.Object)
 		}
 	}
 
-	if err := provider.DeleteTenant(ctx, realmName); err != nil {
+	if err := provider.DeleteOrganization(ctx, realmName); err != nil {
 		return subroutines.OK(), fmt.Errorf("failed to delete realm: %w", err)
 	}
 
@@ -217,7 +217,9 @@ func (s *subroutine) process(ctx context.Context, obj ctrlruntimeclient.Object) 
 }
 
 func (s *subroutine) ensureRealm(ctx context.Context, provider idp.Provider, realmName string, registrationAllowed bool, log *logger.Logger) error {
-	created, err := provider.EnsureTenant(ctx, realmName, registrationAllowed)
+	created, err := provider.EnsureOrganization(ctx, realmName, idp.OrganizationConfig{
+		RegistrationAllowed: registrationAllowed,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create or update realm: %w", err)
 	}
@@ -295,7 +297,7 @@ func (s *subroutine) ensureClient(ctx context.Context, ipc *pmcorev1alpha1.Ident
 	}
 
 	if existingClient == nil {
-		return provider.RegisterClient(ctx, metadata)
+		return provider.CreateClient(ctx, metadata)
 	}
 
 	// Client exists, update it
