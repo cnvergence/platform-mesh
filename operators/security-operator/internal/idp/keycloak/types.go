@@ -35,25 +35,29 @@ type Config struct {
 	SMTP                *SMTPConfig
 }
 
-type TenantConfig struct {
-	Realm string `json:"realm"`
+type realmConfig struct {
+	Realm                       string      `json:"realm"`
+	DisplayName                 string      `json:"displayName,omitempty"`
+	Enabled                     bool        `json:"enabled"`
+	LoginWithEmailAllowed       bool        `json:"loginWithEmailAllowed,omitempty"`
+	RegistrationEmailAsUsername bool        `json:"registrationEmailAsUsername,omitempty"`
+	RegistrationAllowed         bool        `json:"registrationAllowed,omitempty"`
+	SSOSessionIdleTimeout       int         `json:"ssoSessionIdleTimeout,omitempty"`
+	AccessTokenLifespan         int         `json:"accessTokenLifespan,omitempty"`
+	SMTPServer                  *SMTPConfig `json:"smtpServer,omitempty"`
 }
 
-type ListUsersOptions struct {
-	Email string `json:"email"`
-}
-
-// TODO: is this the same/superset as UserInfo?
 type user struct {
-	ID              string       `json:"id,omitempty"`
-	Email           string       `json:"email,omitempty"`
-	RequiredActions []string     `json:"requiredActions,omitempty"`
-	Enabled         bool         `json:"enabled,omitempty"`
-	Credentials     []credential `json:"credentials,omitempty"`
+	ID              string           `json:"id,omitempty"`
+	Username        string           `json:"username,omitempty"`
+	Email           string           `json:"email,omitempty"`
+	RequiredActions []string         `json:"requiredActions,omitempty"`
+	Enabled         bool             `json:"enabled,omitempty"`
+	Credentials     []userCredential `json:"credentials,omitempty"`
 }
 
 func (u *user) ToPublic() *idp.User {
-	credentials := make([]idp.Credential, 0, len(u.Credentials))
+	credentials := make([]idp.UserCredential, 0, len(u.Credentials))
 	for _, c := range u.Credentials {
 		public := c.ToPublic()
 		credentials = append(credentials, *public)
@@ -68,14 +72,14 @@ func (u *user) ToPublic() *idp.User {
 	}
 }
 
-type credential struct {
+type userCredential struct {
 	Type      string `json:"type"`
 	Value     string `json:"value"`
 	Temporary bool   `json:"temporary"`
 }
 
-func (c *credential) ToPublic() *idp.Credential {
-	return &idp.Credential{
+func (c *userCredential) ToPublic() *idp.UserCredential {
+	return &idp.UserCredential{
 		Type:      c.Type,
 		Value:     c.Value,
 		Temporary: c.Temporary,
@@ -83,20 +87,10 @@ func (c *credential) ToPublic() *idp.Credential {
 }
 
 type client struct {
-	ID       string `json:"id,omitempty"`
-	ClientID string `json:"clientId,omitempty"`
-}
-
-type realmConfig struct {
-	Realm                       string      `json:"realm"`
-	DisplayName                 string      `json:"displayName,omitempty"`
-	Enabled                     bool        `json:"enabled"`
-	LoginWithEmailAllowed       bool        `json:"loginWithEmailAllowed,omitempty"`
-	RegistrationEmailAsUsername bool        `json:"registrationEmailAsUsername,omitempty"`
-	RegistrationAllowed         bool        `json:"registrationAllowed,omitempty"`
-	SSOSessionIdleTimeout       int         `json:"ssoSessionIdleTimeout,omitempty"`
-	AccessTokenLifespan         int         `json:"accessTokenLifespan,omitempty"`
-	SMTPServer                  *SMTPConfig `json:"smtpServer,omitempty"`
+	ID       string `json:"id"`
+	ClientID string `json:"clientId"`
+	Name     string `json:"name"`
+	Secret   string `json:"secret"`
 }
 
 type SMTPConfig struct {
@@ -110,13 +104,6 @@ type SMTPConfig struct {
 	Password string `json:"password,omitempty"`
 }
 
-type clientInfo struct {
-	ID       string `json:"id"`
-	ClientID string `json:"clientId"`
-	Name     string `json:"name"`
-	Secret   string `json:"secret"`
-}
-
 type serviceAccountClientConfig struct {
 	ClientID               string `json:"clientId"`
 	Name                   string `json:"name,omitempty"`
@@ -125,32 +112,20 @@ type serviceAccountClientConfig struct {
 	PublicClient           bool   `json:"publicClient"`
 }
 
-type userInfo struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-}
-
-func (u *userInfo) ToPublic() *idp.UserInfo {
-	return &idp.UserInfo{
-		ID:       u.ID,
-		Username: u.Username,
-	}
-}
-
-type roleInfo struct {
+type role struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-func createRoleInfo(ri idp.RoleInfo) roleInfo {
-	return roleInfo{
+func createRole(ri idp.Role) role {
+	return role{
 		ID:   ri.ID,
 		Name: ri.Name,
 	}
 }
 
-func (r *roleInfo) ToPublic() *idp.RoleInfo {
-	return &idp.RoleInfo{
+func (r *role) ToPublic() *idp.Role {
+	return &idp.Role{
 		ID:   r.ID,
 		Name: r.Name,
 	}

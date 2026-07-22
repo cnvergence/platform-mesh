@@ -30,8 +30,8 @@ type Provider interface {
 	UpdateClient(ctx context.Context, registrationURI, registrationToken string, metadata dcr.ClientMetadata) (dcr.ClientInformation, error)
 	DeleteClient(ctx context.Context, clientID, registrationURI, registrationToken string) error
 
-	GetClientByName(ctx context.Context, clientName string) (*ClientInfo, error)
-	GetClientByID(ctx context.Context, clientID string) (*ClientInfo, error)
+	GetClientByName(ctx context.Context, clientName string) (*Client, error)
+	GetClientByID(ctx context.Context, clientID string) (*Client, error)
 
 	// Realm (org) Management (provider-specific)
 	CreateOrganization(ctx context.Context, orgID string, config OrganizationConfig) error
@@ -56,56 +56,16 @@ type Provider interface {
 	TokenEndpoint(orgID string) string
 
 	RegistrationEndpoint(clientID string) string
-	GetOrganizationRole(ctx context.Context, roleName string) (*RoleInfo, error)
-	ListClients(ctx context.Context) ([]ClientInfo, error)
-	CreateServiceAccountClient(ctx context.Context, config ServiceAccountClientConfig) (*ClientInfo, error)
+	GetOrganizationRole(ctx context.Context, roleName string) (*Role, error)
+	ListClients(ctx context.Context) ([]Client, error)
+	CreateServiceAccountClient(ctx context.Context, config ServiceAccountClientConfig) (*Client, error)
 	GetClientSecret(ctx context.Context, clientID string) (string, error)
-	GetServiceAccountUser(ctx context.Context, clientID string) (*UserInfo, error)
-	AssignRoleToUser(ctx context.Context, serviceAccountUserID string, adminRole RoleInfo) error
+	GetServiceAccountUser(ctx context.Context, clientID string) (*User, error)
+	AssignRoleToUser(ctx context.Context, serviceAccountUserID string, adminRole Role) error
 }
 
 type OrganizationConfig struct {
 	RegistrationAllowed bool
-}
-
-// type ListUsersOptions struct {
-// 	Email string
-// }
-
-// type user struct {
-// 	ID              string
-// 	Email           string
-// 	RequiredActions []string
-// 	Enabled         bool
-// 	Credentials     []credential
-// }
-
-// type credential struct {
-// 	Type      string
-// 	Value     string
-// 	Temporary bool
-// }
-
-// type client struct {
-// 	ID       string
-// 	ClientID string
-// }
-
-type ClientInfo struct {
-	ID       string // UUID
-	ClientID string
-	Name     string
-	Secret   string
-}
-
-type UserInfo struct {
-	ID       string
-	Username string
-}
-
-type RoleInfo struct {
-	ID   string
-	Name string
 }
 
 type ServiceAccountClientConfig struct {
@@ -116,16 +76,28 @@ type ServiceAccountClientConfig struct {
 	PublicClient           bool
 }
 
-// TODO: is this the same/superset as UserInfo?
+type Client struct {
+	ID       string // UUID
+	ClientID string
+	Name     string
+	Secret   string
+}
+
+type Role struct {
+	ID   string
+	Name string
+}
+
 type User struct {
 	ID              string
+	Username        string
 	Email           string
 	RequiredActions []string
 	Enabled         bool
-	Credentials     []Credential
+	Credentials     []UserCredential
 }
 
-type Credential struct {
+type UserCredential struct {
 	Type      string
 	Value     string
 	Temporary bool

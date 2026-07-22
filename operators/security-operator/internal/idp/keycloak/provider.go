@@ -215,14 +215,14 @@ func (c *AdminClient) DeleteOrganization(ctx context.Context, orgID string) erro
 	return errorResponse(responseData, statusCode, "delete realm")
 }
 
-func (c *AdminClient) GetClientByName(ctx context.Context, clientName string) (*idp.ClientInfo, error) {
-	return c.getClient(ctx, func(client idp.ClientInfo) bool {
+func (c *AdminClient) GetClientByName(ctx context.Context, clientName string) (*idp.Client, error) {
+	return c.getClient(ctx, func(client idp.Client) bool {
 		return client.Name == clientName
 	})
 }
 
-func (c *AdminClient) GetClientByID(ctx context.Context, clientID string) (*idp.ClientInfo, error) {
-	client, err := c.getClient(ctx, func(client idp.ClientInfo) bool {
+func (c *AdminClient) GetClientByID(ctx context.Context, clientID string) (*idp.Client, error) {
+	client, err := c.getClient(ctx, func(client idp.Client) bool {
 		return client.ID == clientID
 	})
 	if err != nil {
@@ -236,7 +236,7 @@ func (c *AdminClient) GetClientByID(ctx context.Context, clientID string) (*idp.
 	return client, nil
 }
 
-func (c *AdminClient) getClient(ctx context.Context, pred func(idp.ClientInfo) bool) (*idp.ClientInfo, error) {
+func (c *AdminClient) getClient(ctx context.Context, pred func(idp.Client) bool) (*idp.Client, error) {
 	clients, err := c.ListClients(ctx)
 	if err != nil {
 		return nil, err
@@ -251,7 +251,7 @@ func (c *AdminClient) getClient(ctx context.Context, pred func(idp.ClientInfo) b
 	return nil, fmt.Errorf("client not found")
 }
 
-func (c *AdminClient) ListClients(ctx context.Context) ([]idp.ClientInfo, error) {
+func (c *AdminClient) ListClients(ctx context.Context) ([]idp.Client, error) {
 	url := fmt.Sprintf("/admin/realms/%s/clients", c.realm)
 
 	responseData, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
@@ -263,7 +263,7 @@ func (c *AdminClient) ListClients(ctx context.Context) ([]idp.ClientInfo, error)
 		return nil, errorResponse(responseData, statusCode, "get clients")
 	}
 
-	var clients []idp.ClientInfo
+	var clients []idp.Client
 	if err := json.Unmarshal(responseData, &clients); err != nil {
 		return nil, fmt.Errorf("failed to parse clients response: %w", err)
 	}
@@ -271,7 +271,7 @@ func (c *AdminClient) ListClients(ctx context.Context) ([]idp.ClientInfo, error)
 	return clients, nil
 }
 
-func (c *AdminClient) CreateServiceAccountClient(ctx context.Context, config idp.ServiceAccountClientConfig) (*idp.ClientInfo, error) {
+func (c *AdminClient) CreateServiceAccountClient(ctx context.Context, config idp.ServiceAccountClientConfig) (*idp.Client, error) {
 	url := fmt.Sprintf("%s/admin/realms/%s/clients", c.baseURL, c.realm)
 
 	body, err := json.Marshal(config)
@@ -303,7 +303,7 @@ func (c *AdminClient) CreateServiceAccountClient(ctx context.Context, config idp
 	parts := strings.Split(location, "/")
 	clientUUID := parts[len(parts)-1]
 
-	return &idp.ClientInfo{
+	return &idp.Client{
 		ID:       clientUUID,
 		ClientID: config.ClientID,
 		Name:     config.Name,
@@ -338,7 +338,7 @@ func (c *AdminClient) GetClientSecret(ctx context.Context, clientID string) (str
 	return result.Value, nil
 }
 
-func (c *AdminClient) GetServiceAccountUser(ctx context.Context, clientID string) (*idp.UserInfo, error) {
+func (c *AdminClient) GetServiceAccountUser(ctx context.Context, clientID string) (*idp.User, error) {
 	// resolve public ID to internal UUID
 	client, err := c.GetClientByID(ctx, clientID)
 	if err != nil {
@@ -356,7 +356,7 @@ func (c *AdminClient) GetServiceAccountUser(ctx context.Context, clientID string
 		return nil, errorResponse(responseData, statusCode, "get service account user")
 	}
 
-	var user userInfo
+	var user user
 	if err := json.Unmarshal(responseData, &user); err != nil {
 		return nil, fmt.Errorf("failed to parse service account user response: %w", err)
 	}
@@ -364,7 +364,7 @@ func (c *AdminClient) GetServiceAccountUser(ctx context.Context, clientID string
 	return user.ToPublic(), nil
 }
 
-func (c *AdminClient) GetOrganizationRole(ctx context.Context, roleName string) (*idp.RoleInfo, error) {
+func (c *AdminClient) GetOrganizationRole(ctx context.Context, roleName string) (*idp.Role, error) {
 	url := fmt.Sprintf("/admin/realms/%s/roles/%s", c.realm, roleName)
 
 	responseData, statusCode, err := c.doRequest(ctx, http.MethodGet, url, nil)
@@ -379,7 +379,7 @@ func (c *AdminClient) GetOrganizationRole(ctx context.Context, roleName string) 
 		return nil, errorResponse(responseData, statusCode, "get role")
 	}
 
-	var role roleInfo
+	var role role
 	if err := json.Unmarshal(responseData, &role); err != nil {
 		return nil, fmt.Errorf("failed to parse role response: %w", err)
 	}
@@ -387,10 +387,10 @@ func (c *AdminClient) GetOrganizationRole(ctx context.Context, roleName string) 
 	return role.ToPublic(), nil
 }
 
-func (c *AdminClient) AssignRoleToUser(ctx context.Context, userID string, role idp.RoleInfo) error {
+func (c *AdminClient) AssignRoleToUser(ctx context.Context, userID string, r idp.Role) error {
 	url := fmt.Sprintf("/admin/realms/%s/users/%s/role-mappings/realm", c.realm, userID)
 
-	body, err := json.Marshal([]roleInfo{createRoleInfo(role)})
+	body, err := json.Marshal([]role{createRole(r)})
 	if err != nil {
 		return fmt.Errorf("failed to marshal role: %w", err)
 	}
@@ -507,7 +507,7 @@ func (c *AdminClient) CreateUser(ctx context.Context, orgID string, clientID str
 
 	if c.cfg.SetDefaultPassword {
 		newUser.RequiredActions = []string{RequiredActionUpdatePassword}
-		newUser.Credentials = []credential{{
+		newUser.Credentials = []userCredential{{
 			Type:      UserDefaultPasswordType,
 			Value:     UserDefaultPasswordValue,
 			Temporary: true,
