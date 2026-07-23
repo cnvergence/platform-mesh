@@ -30,7 +30,7 @@ import (
 )
 
 func Create2LeggedProvider(cfg *config.Config) (idp.Provider, error) {
-	switch "TODO: cfg.IDP.Implementation" {
+	switch cfg.IDP.Implementation {
 	case "keycloak":
 		ctx := context.Background()
 
@@ -56,7 +56,7 @@ func Create2LeggedProvider(cfg *config.Config) (idp.Provider, error) {
 }
 
 func Create3LeggedProvider(cfg *config.InitContainerConfiguration, globalConfig *config.Config, password string) (idp.Provider, error) {
-	switch "TODO: cfg.IDP.Implementation" {
+	switch globalConfig.IDP.Implementation {
 	case "keycloak":
 		ctx := context.Background()
 
